@@ -1,0 +1,6 @@
+target/
+*.class
+nbproject/private/
+nb-configuration.xml
+.netbeans.log
+config.properties
