@@ -4,21 +4,18 @@ import com.google.gson.Gson;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.PrintWriter;
-import java.net.Socket;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import model.MensajeSocket;
+import network.ClienteConexion;
 
-public class LoginFrame extends JFrame {
+public class LoginFrame extends JFrame implements ClienteConexion.MensajeListener {
     
     private JTextField txtUsuario;
     private JPasswordField txtPassword;
     private JButton btnIngresar;
     
     // Variables de red
-    private Socket socket;
-    private PrintWriter salida;
     private Gson gson;
 
     public LoginFrame() {
@@ -121,6 +118,8 @@ public class LoginFrame extends JFrame {
         add(mainPanel);
 
         // --- LÓGICA DE RED Y EVENTOS ---
+        // Registrar esta ventana como oyente de red
+        ClienteConexion.getInstancia().addListener(this);
         conectarAlServidor();
 
         btnIngresar.addActionListener(new ActionListener() {
@@ -132,13 +131,18 @@ public class LoginFrame extends JFrame {
     }
 
     private void conectarAlServidor() {
-        try {
-            socket = new Socket("localhost", 5000);
-            salida = new PrintWriter(socket.getOutputStream(), true);
-            System.out.println("[+] Conectado exitosamente al servidor de Sockets.");
-        } catch (Exception e) {
-            System.err.println("[-] No se pudo conectar al servidor: " + e.getMessage());
-        }
+        // Conexión asíncrona al iniciar
+        new Thread(() -> {
+            boolean exito = ClienteConexion.getInstancia().conectar("localhost", 5000);
+            if (!exito) {
+                SwingUtilities.invokeLater(() -> {
+                    JOptionPane.showMessageDialog(this, 
+                        "No se pudo conectar al servidor. Enciéndalo primero.", 
+                        "Error de Conexión", 
+                        JOptionPane.ERROR_MESSAGE);
+                });
+            }
+        }).start();
     }
 
     private void ejecutarLogin() {
@@ -150,22 +154,65 @@ public class LoginFrame extends JFrame {
             return;
         }
 
+        if (!ClienteConexion.getInstancia().isConectado()) {
+            JOptionPane.showMessageDialog(this, "Sin conexión con el servidor. Reintentando...", "Error", JOptionPane.ERROR_MESSAGE);
+            conectarAlServidor();
+            return;
+        }
+
+        // Desactivar botón temporalmente para evitar doble clic
+        btnIngresar.setEnabled(false);
+        btnIngresar.setText("Verificando...");
+
         // Empaquetamos los datos usando la clase del paquete modelo
         MensajeSocket solicitudLogin = new MensajeSocket();
         solicitudLogin.setType("LOGIN_REQUEST");
         solicitudLogin.setUserName(usuario);
         solicitudLogin.setMessage(password);
 
-        // Convertimos el objeto Java a una cadena JSON
-        String jsonPayload = gson.toJson(solicitudLogin);
+        // Enviamos el JSON al servidor a través del manejador único
+        ClienteConexion.getInstancia().enviarMensaje(solicitudLogin);
+        System.out.println("[->] Enviada solicitud de login para: " + usuario);
+    }
 
-        // Enviamos el JSON al servidor
-        if (salida != null) {
-            salida.println(jsonPayload);
-            System.out.println("[->] Enviado al Servidor: " + jsonPayload);
-        } else {
-            JOptionPane.showMessageDialog(this, "Sin conexión con el servidor. Enciéndalo primero.", "Error", JOptionPane.ERROR_MESSAGE);
+    @Override
+    public void onMensajeRecibido(MensajeSocket mensaje) {
+        if ("LOGIN_RESPONSE".equalsIgnoreCase(mensaje.getType())) {
+            // Regresar al hilo de Swing para actualizar la UI
+            SwingUtilities.invokeLater(() -> {
+                btnIngresar.setEnabled(true);
+                btnIngresar.setText("Ingresar a la Sala");
+                
+                if ("SUCCESS".equalsIgnoreCase(mensaje.getMessage())) {
+                    JOptionPane.showMessageDialog(this, 
+                        "¡Inicio de sesión exitoso! Bienvenido " + mensaje.getUserName(), 
+                        "Acceso Permitido", 
+                        JOptionPane.INFORMATION_MESSAGE);
+                    
+                    // Abrir la sala principal pasando el ID y Nombre del usuario
+                    RoomFrame roomFrame = new RoomFrame(mensaje.getUserId(), mensaje.getUserName());
+                    roomFrame.setVisible(true);
+                    this.dispose();
+                } else {
+                    JOptionPane.showMessageDialog(this, 
+                        "Error: " + mensaje.getMessage(), 
+                        "Acceso Denegado", 
+                        JOptionPane.ERROR_MESSAGE);
+                }
+            });
         }
+    }
+
+    @Override
+    public void onDesconexion() {
+        SwingUtilities.invokeLater(() -> {
+            btnIngresar.setEnabled(true);
+            btnIngresar.setText("Ingresar a la Sala");
+            JOptionPane.showMessageDialog(this, 
+                "Se ha perdido la conexión con el servidor.", 
+                "Desconectado", 
+                JOptionPane.WARNING_MESSAGE);
+        });
     }
 
     public static void main(String[] args) {

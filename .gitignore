@@ -1,6 +1,25 @@
+# --- Carpetas de Compilación y Maven ---
+**/target/
 target/
 *.class
+
+# --- Configuraciones del IDE (NetBeans, Eclipse, IntelliJ) ---
+**/nbproject/private/
 nbproject/private/
+**/nb-configuration.xml
 nb-configuration.xml
+**/.netbeans.log
 .netbeans.log
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+
+# --- Configuraciones Locales y Credenciales ---
+**/config.properties
 config.properties
+
+# --- Archivos del Sistema Operativo ---
+Thumbs.db
+.DS_Store

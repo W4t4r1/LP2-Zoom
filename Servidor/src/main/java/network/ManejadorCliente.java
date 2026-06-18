@@ -1,16 +1,46 @@
 package network;
 
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import database.DBService;
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStreamReader;
+import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.Base64;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import model.MensajeSocket;
+import model.Usuario;
 
 public class ManejadorCliente implements Runnable {
     
     private Socket socketCliente;
+    private BufferedReader entrada;
+    private PrintWriter salida;
+    private Gson gson;
+
+    // Estado de la conexión
+    private Integer userId;
+    private String userName;
+    private String roomCode;
+
+    // Directorio de almacenamiento de archivos
+    private static final String DIRECTORIO_UPLOADS = "uploads";
+
+    // Almacenamiento temporal para transferencias de archivos concurrentes (FileId -> FileOutputStream)
+    private static final Map<String, FileOutputStream> archivosEnProgreso = new ConcurrentHashMap<>();
+    // Mapa para mapear FileId a Nombre de archivo
+    private static final Map<String, String> nombresArchivos = new ConcurrentHashMap<>();
 
     // Constructor que recibe el enchufe (socket) del cliente recién conectado
     public ManejadorCliente(Socket socketCliente) {
         this.socketCliente = socketCliente;
+        this.gson = new Gson();
     }
 
     @Override
@@ -18,26 +48,379 @@ public class ManejadorCliente implements Runnable {
         try {
             System.out.println("[+] Hilo iniciado para el cliente: " + socketCliente.getInetAddress().getHostAddress());
             
-            // Preparar el lector para escuchar lo que dice el cliente
-            BufferedReader entrada = new BufferedReader(new InputStreamReader(socketCliente.getInputStream()));
+            // Preparar canales de comunicación
+            entrada = new BufferedReader(new InputStreamReader(socketCliente.getInputStream()));
+            salida = new PrintWriter(socketCliente.getOutputStream(), true);
+            
             String mensajeJSON;
 
             // Bucle infinito para escuchar a este cliente hasta que se desconecte
             while ((mensajeJSON = entrada.readLine()) != null) {
-                System.out.println("Mensaje recibido del cliente: " + mensajeJSON);
-                
-                // TODO: Aquí usaremos Gson para convertir este String a tu clase MensajeSocket
-                // y luego conectaremos con Supabase para hacer el Login o Chat.
+                try {
+                    MensajeSocket mensaje = gson.fromJson(mensajeJSON, MensajeSocket.class);
+                    if (mensaje == null || mensaje.getType() == null) continue;
+
+                    procesarMensaje(mensaje);
+
+                } catch (Exception e) {
+                    System.err.println("[-] Error al procesar JSON: " + e.getMessage());
+                }
             }
 
         } catch (Exception e) {
             System.err.println("[-] Cliente desconectado o error de red: " + e.getMessage());
         } finally {
+            desconectar();
+        }
+    }
+
+    /**
+     * Envia un mensaje serializado en JSON al socket del cliente.
+     */
+    public void enviarMensaje(MensajeSocket mensaje) {
+        try {
+            if (salida != null) {
+                String json = gson.toJson(mensaje);
+                salida.println(json);
+            }
+        } catch (Exception e) {
+            System.err.println("[-] Error al enviar mensaje a usuario " + userId + ": " + e.getMessage());
+        }
+    }
+
+    private void procesarMensaje(MensajeSocket mensaje) {
+        String tipo = mensaje.getType();
+
+        switch (tipo) {
+            case "LOGIN_REQUEST":
+                ejecutarLogin(mensaje);
+                break;
+
+            case "CREATE_ROOM":
+                ejecutarCrearSala(mensaje);
+                break;
+
+            case "JOIN_ROOM_REQUEST":
+                ejecutarSolicitudUnirse(mensaje);
+                break;
+
+            case "ADMIT_USER":
+                ejecutarAdmitirUsuario(mensaje);
+                break;
+
+            case "CHAT_MESSAGE":
+                ejecutarMensajeChat(mensaje);
+                break;
+
+            case "CAMERA_FRAME":
+                ejecutarFrameCamara(mensaje);
+                break;
+
+            case "LEAVE_ROOM":
+                ejecutarSalirSala(mensaje);
+                break;
+
+            case "FILE_START":
+                ejecutarInicioArchivo(mensaje);
+                break;
+
+            case "FILE_CHUNK":
+                ejecutarChunkArchivo(mensaje);
+                break;
+
+            case "FILE_END":
+                ejecutarFinArchivo(mensaje);
+                break;
+
+            default:
+                System.out.println("[!] Tipo de mensaje no soportado: " + tipo);
+                break;
+        }
+    }
+
+    private void ejecutarLogin(MensajeSocket mensaje) {
+        String correo = mensaje.getUserName();
+        String password = mensaje.getMessage(); // Contraseña enviada en el campo mensaje
+
+        System.out.println("[*] Intento de login para: " + correo);
+        Usuario usuario = DBService.login(correo, password);
+
+        MensajeSocket respuesta = new MensajeSocket();
+        respuesta.setType("LOGIN_RESPONSE");
+
+        if (usuario != null) {
+            this.userId = usuario.getIdUsuario();
+            this.userName = usuario.getNombres();
+            
+            // Registrar cliente en el mapa global
+            MainServidor.clientesActivos.put(this.userId, this);
+            
+            respuesta.setUserId(usuario.getIdUsuario());
+            respuesta.setUserName(usuario.getNombres());
+            respuesta.setMessage("SUCCESS");
+            System.out.println("[OK] Login exitoso. Usuario ID: " + this.userId);
+        } else {
+            respuesta.setMessage("ERROR: Credenciales incorrectas o problemas de base de datos.");
+            System.out.println("[-] Login fallido para: " + correo);
+        }
+        enviarMensaje(respuesta);
+    }
+
+    private void ejecutarCrearSala(MensajeSocket mensaje) {
+        if (this.userId == null) return;
+
+        String nombreSala = mensaje.getMessage() != null ? mensaje.getMessage() : "Sala de " + this.userName;
+        // Generar un código único de sala de 6 dígitos
+        String codigoSala = UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+
+        System.out.println("[*] Creando sala " + codigoSala + " solicitada por Host ID: " + this.userId);
+        boolean creada = DBService.crearSala(codigoSala, nombreSala, this.userId);
+
+        MensajeSocket respuesta = new MensajeSocket();
+        respuesta.setType("CREATE_ROOM");
+
+        if (creada) {
+            this.roomCode = codigoSala;
+            // Registrar al anfitrión directamente como participante
+            DBService.agregarParticipante(codigoSala, this.userId);
+            
+            respuesta.setRoomCode(codigoSala);
+            respuesta.setMessage("SUCCESS");
+            System.out.println("[OK] Sala creada con éxito: " + codigoSala);
+        } else {
+            respuesta.setMessage("ERROR: No se pudo crear la sala en la base de datos.");
+            System.out.println("[-] Error al crear sala para Host ID: " + this.userId);
+        }
+        enviarMensaje(respuesta);
+    }
+
+    private void ejecutarSolicitudUnirse(MensajeSocket mensaje) {
+        if (this.userId == null) return;
+
+        String codigo = mensaje.getRoomCode();
+        System.out.println("[*] Usuario " + this.userName + " (ID: " + this.userId + ") solicita unirse a sala: " + codigo);
+
+        boolean registrada = DBService.solicitarUnirseASala(codigo, this.userId);
+
+        MensajeSocket respuesta = new MensajeSocket();
+        respuesta.setType("JOIN_ROOM_RESPONSE"); // o WAITING_ROOM_UPDATE para mantener la coherencia
+        respuesta.setRoomCode(codigo);
+
+        if (registrada) {
+            this.roomCode = codigo; // Queda asignada la sala del socket temporalmente
+            respuesta.setMessage("PENDIENTE");
+            System.out.println("[OK] Solicitud registrada como PENDIENTE para " + this.userName);
+            
+            // Notificar al Host de la sala para que actualice su UI de sala de espera
+            notificarActualizacionSalaEspera(codigo);
+        } else {
+            respuesta.setMessage("ERROR: La sala no existe o no se encuentra activa.");
+            System.out.println("[-] Solicitud de unión fallida para sala: " + codigo);
+        }
+        enviarMensaje(respuesta);
+    }
+
+    private void ejecutarAdmitirUsuario(MensajeSocket mensaje) {
+        if (this.userId == null) return;
+
+        String codigo = mensaje.getRoomCode();
+        // El host envía el IdUsuario del invitado en el campo userId y la acción ("ACEPTAR" / "RECHAZAR") en message
+        Integer invitadoId = mensaje.getUserId();
+        String accion = mensaje.getMessage();
+
+        if (invitadoId == null || accion == null) return;
+
+        // Verificar que quien lo solicita sea efectivamente el Host de la sala
+        int hostId = DBService.obtenerHostIdPorCodigo(codigo);
+        if (hostId != this.userId) {
+            System.err.println("[WARNING] Intento no autorizado de admisión en sala " + codigo + " por usuario ID " + this.userId);
+            return;
+        }
+
+        String nuevoEstado = ("ACEPTADO".equalsIgnoreCase(accion) || "ACEPTAR".equalsIgnoreCase(accion)) ? "ACEPTADO" : "RECHAZADO";
+        System.out.println("[*] Host (ID: " + this.userId + ") actualizó solicitud de Invitado ID: " + invitadoId + " a: " + nuevoEstado);
+        
+        boolean ok = DBService.actualizarEstadoSolicitud(codigo, invitadoId, nuevoEstado);
+
+        if (ok) {
+            // Notificar al Invitado sobre la decisión si está conectado
+            ManejadorCliente invitadoManejador = MainServidor.clientesActivos.get(invitadoId);
+            if (invitadoManejador != null) {
+                MensajeSocket notifInvitado = new MensajeSocket();
+                notifInvitado.setType("ADMIT_USER");
+                notifInvitado.setRoomCode(codigo);
+                notifInvitado.setMessage(nuevoEstado.equals("ACEPTADO") ? "ACCEPTED" : "REJECTED");
+                invitadoManejador.enviarMensaje(notifInvitado);
+                
+                if (nuevoEstado.equals("ACEPTADO")) {
+                    invitadoManejador.setRoomCode(codigo); // Se confirma su inclusión en la sala
+                } else {
+                    invitadoManejador.setRoomCode(null);  // Remueve sala temporal
+                }
+            }
+            
+            // Enviar la lista de espera actualizada al Host
+            notificarActualizacionSalaEspera(codigo);
+        }
+    }
+
+    private void ejecutarMensajeChat(MensajeSocket mensaje) {
+        if (this.userId == null || this.roomCode == null) return;
+
+        System.out.println("[CHAT] Mensaje recibido de " + this.userName + " en sala " + this.roomCode + ": " + mensaje.getMessage());
+        
+        // Guardar mensaje en base de datos
+        DBService.guardarMensaje(this.roomCode, this.userId, mensaje.getMessage());
+
+        // Retransmitir mensaje a todos los miembros activos en la sala
+        MainServidor.retransmitirMensaje(mensaje, null);
+    }
+
+    private void ejecutarFrameCamara(MensajeSocket mensaje) {
+        if (this.userId == null || this.roomCode == null) return;
+
+        // Retransmitir frame a todos en la sala menos al remitente
+        MainServidor.retransmitirMensaje(mensaje, this.userId);
+    }
+
+    private void ejecutarSalirSala(MensajeSocket mensaje) {
+        if (this.userId == null || this.roomCode == null) return;
+
+        System.out.println("[-] Usuario " + this.userName + " sale de la sala " + this.roomCode);
+        
+        // Remover de la base de datos de participantes activos
+        DBService.actualizarEstadoSolicitud(this.roomCode, this.userId, "RECHAZADO");
+        
+        String codigoSalida = this.roomCode;
+        this.roomCode = null;
+
+        // Notificar a los demás que el usuario abandonó
+        MensajeSocket alerta = new MensajeSocket("CHAT_MESSAGE", codigoSalida, 0, "SISTEMA", this.userName + " ha salido de la sala.", null);
+        MainServidor.retransmitirMensaje(alerta, null);
+    }
+
+    private void ejecutarInicioArchivo(MensajeSocket mensaje) {
+        if (this.userId == null || this.roomCode == null) return;
+
+        try {
+            // El host/invitado envía en el campo message los datos formateados del archivo: "fileId|nombreArchivo"
+            String payload = mensaje.getMessage();
+            if (payload == null || !payload.contains("|")) return;
+
+            String[] partes = payload.split("\\|", 2);
+            String fileId = partes[0];
+            String nombreArchivo = partes[1];
+
+            // Asegurar que exista la carpeta uploads
+            File directorio = new File(DIRECTORIO_UPLOADS);
+            if (!directorio.exists()) {
+                directorio.mkdirs();
+            }
+
+            // Crear archivo físico en servidor con un nombre único para evitar colisiones
+            String rutaFisica = DIRECTORIO_UPLOADS + File.separator + fileId + "_" + nombreArchivo;
+            FileOutputStream fos = new FileOutputStream(rutaFisica);
+
+            archivosEnProgreso.put(fileId, fos);
+            nombresArchivos.put(fileId, nombreArchivo);
+            
+            System.out.println("[*] Iniciando recepción de archivo: " + nombreArchivo + " (FileId: " + fileId + ")");
+
+        } catch (Exception e) {
+            System.err.println("[-] Error al iniciar archivo: " + e.getMessage());
+        }
+    }
+
+    private void ejecutarChunkArchivo(MensajeSocket mensaje) {
+        // payload: "fileId|chunkBase64"
+        String payload = mensaje.getMessage();
+        if (payload == null || !payload.contains("|")) return;
+
+        String[] partes = payload.split("\\|", 2);
+        String fileId = partes[0];
+        String chunkBase64 = partes[1];
+
+        FileOutputStream fos = archivosEnProgreso.get(fileId);
+        if (fos != null) {
             try {
-                socketCliente.close(); // Liberamos el recurso si hay error
+                byte[] bytes = Base64.getDecoder().decode(chunkBase64);
+                fos.write(bytes);
             } catch (Exception e) {
-                e.printStackTrace();
+                System.err.println("[-] Error al escribir chunk de archivo ID " + fileId + ": " + e.getMessage());
             }
         }
     }
+
+    private void ejecutarFinArchivo(MensajeSocket mensaje) {
+        String fileId = mensaje.getMessage();
+        FileOutputStream fos = archivosEnProgreso.remove(fileId);
+        String nombreArchivo = nombresArchivos.remove(fileId);
+
+        if (fos != null && nombreArchivo != null) {
+            try {
+                fos.close();
+                String rutaFisica = DIRECTORIO_UPLOADS + File.separator + fileId + "_" + nombreArchivo;
+                System.out.println("[OK] Archivo recibido por completo: " + nombreArchivo);
+
+                // Guardar registro de archivo en base de datos
+                DBService.guardarArchivo(this.roomCode, this.userId, nombreArchivo, rutaFisica);
+
+                // Notificar en el chat sobre la disponibilidad del nuevo archivo
+                MensajeSocket alertaChat = new MensajeSocket();
+                alertaChat.setType("CHAT_MESSAGE");
+                alertaChat.setRoomCode(this.roomCode);
+                alertaChat.setUserId(0); // Sistema
+                alertaChat.setUserName("SISTEMA");
+                alertaChat.setMessage("El usuario '" + this.userName + "' compartió el archivo: " + nombreArchivo);
+                MainServidor.retransmitirMensaje(alertaChat, null);
+
+            } catch (Exception e) {
+                System.err.println("[-] Error al cerrar archivo: " + e.getMessage());
+            }
+        }
+    }
+
+    private void notificarActualizacionSalaEspera(String codigoSala) {
+        int hostId = DBService.obtenerHostIdPorCodigo(codigoSala);
+        ManejadorCliente hostManejador = MainServidor.clientesActivos.get(hostId);
+        
+        if (hostManejador != null) {
+            List<Map<String, Object>> solicitudes = DBService.obtenerSolicitudesPendientes(codigoSala);
+            String jsonSolicitudes = gson.toJson(solicitudes);
+            
+            MensajeSocket notifHost = new MensajeSocket();
+            notifHost.setType("WAITING_ROOM_UPDATE");
+            notifHost.setRoomCode(codigoSala);
+            notifHost.setMessage(jsonSolicitudes);
+            hostManejador.enviarMensaje(notifHost);
+            System.out.println("[->] Enviada actualización de sala de espera al Host (ID: " + hostId + ")");
+        }
+    }
+
+    private void desconectar() {
+        try {
+            if (this.userId != null) {
+                MainServidor.clientesActivos.remove(this.userId);
+                System.out.println("[-] Usuario " + this.userName + " (ID: " + this.userId + ") desconectado del registro.");
+                
+                // Si estaba en una sala, notificar
+                if (this.roomCode != null) {
+                    DBService.actualizarEstadoSolicitud(this.roomCode, this.userId, "RECHAZADO");
+                    MensajeSocket alerta = new MensajeSocket("CHAT_MESSAGE", this.roomCode, 0, "SISTEMA", this.userName + " se ha desconectado.", null);
+                    MainServidor.retransmitirMensaje(alerta, null);
+                }
+            }
+            if (socketCliente != null && !socketCliente.isClosed()) {
+                socketCliente.close();
+            }
+        } catch (Exception e) {
+            System.err.println("[-] Error al cerrar recursos del socket: " + e.getMessage());
+        }
+    }
+
+    // --- GETTERS Y SETTERS ---
+    public Integer getUserId() { return userId; }
+    public String getUserName() { return userName; }
+    public String getRoomCode() { return roomCode; }
+    public void setRoomCode(String roomCode) { this.roomCode = roomCode; }
 }
