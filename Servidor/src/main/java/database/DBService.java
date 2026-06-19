@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import model.Usuario;
+import model.MensajeSocket;
 
 public class DBService {
 
@@ -307,5 +308,81 @@ public class DBService {
             System.err.println("[DB ERROR] Error al guardar archivo: " + e.getMessage());
         }
         return false;
+    }
+
+    /**
+     * Obtiene el historial de mensajes de una sala ordenados cronológicamente.
+     */
+    public static List<MensajeSocket> obtenerHistorialMensajes(String codigoSala) {
+        List<MensajeSocket> historial = new ArrayList<>();
+        int idSala = obtenerIdSalaPorCodigo(codigoSala);
+        if (idSala == -1) {
+            return historial;
+        }
+
+        String query = "SELECT m.IdMensaje, u.IdUsuario, u.Nombres, m.Contenido, m.FechaEnvio " +
+                       "FROM Mensajes m " +
+                       "JOIN Usuarios u ON m.IdUsuario = u.IdUsuario " +
+                       "WHERE m.IdSala = ? " +
+                       "ORDER BY m.FechaEnvio ASC";
+
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement(query)) {
+            
+            ps.setInt(1, idSala);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    MensajeSocket msg = new MensajeSocket();
+                    msg.setType("CHAT_MESSAGE");
+                    msg.setRoomCode(codigoSala);
+                    msg.setUserId(rs.getInt("IdUsuario"));
+                    msg.setUserName(rs.getString("Nombres"));
+                    msg.setMessage(rs.getString("Contenido"));
+                    msg.setSentAt(rs.getTimestamp("FechaEnvio").toString());
+                    historial.add(msg);
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("[DB ERROR] Error al obtener historial de mensajes: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return historial;
+    }
+
+    /**
+     * Obtiene la lista de archivos compartidos en una sala.
+     */
+    public static List<Map<String, Object>> obtenerArchivosCompartidos(String codigoSala) {
+        List<Map<String, Object>> lista = new ArrayList<>();
+        int idSala = obtenerIdSalaPorCodigo(codigoSala);
+        if (idSala == -1) {
+            return lista;
+        }
+
+        String query = "SELECT a.NombreArchivo, a.RutaArchivo, u.Nombres, a.FechaSubida " +
+                       "FROM ArchivosCompartidos a " +
+                       "JOIN Usuarios u ON a.IdUsuario = u.IdUsuario " +
+                       "WHERE a.IdSala = ? " +
+                       "ORDER BY a.FechaSubida DESC";
+
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement(query)) {
+            
+            ps.setInt(1, idSala);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Map<String, Object> archivo = new HashMap<>();
+                    archivo.put("nombreArchivo", rs.getString("NombreArchivo"));
+                    archivo.put("rutaArchivo", rs.getString("RutaArchivo"));
+                    archivo.put("nombres", rs.getString("Nombres"));
+                    archivo.put("fechaSubida", rs.getTimestamp("FechaSubida").toString());
+                    lista.add(archivo);
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("[DB ERROR] Error al obtener archivos compartidos: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return lista;
     }
 }
