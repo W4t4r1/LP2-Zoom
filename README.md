@@ -6,7 +6,7 @@ El propósito del proyecto es ejemplificar de forma conceptual y práctica la pr
 
 ---
 
-##Arquitectura y Regla de Oro
+## Arquitectura y Regla de Oro
 
 > [!IMPORTANT]
 > **Esquema Estricto Cliente-Servidor**
@@ -16,7 +16,7 @@ El propósito del proyecto es ejemplificar de forma conceptual y práctica la pr
 
 ---
 
-##Índice de Documentación Técnica
+## Índice de Documentación Técnica
 
 Para conocer a fondo el diseño, el contrato de datos o la configuración del entorno, consulta las guías detalladas en la carpeta [docs/](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/docs):
 
@@ -41,7 +41,7 @@ Para conocer a fondo el diseño, el contrato de datos o la configuración del en
 
 ---
 
-##Guía Rápida de Ejecución
+## Guía Rápida de Ejecución
 
 Si deseas iniciar el proyecto localmente para pruebas, ejecuta los siguientes comandos desde tu consola en el directorio raíz de la aplicación:
 
