@@ -6,8 +6,11 @@ import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.lang.reflect.Type;
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
@@ -46,6 +49,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     private JPanel pnlVideoGrid;
 
     private Gson gson;
+    private java.util.Map<String, java.io.FileOutputStream> descargasEnProgreso = new java.util.concurrent.ConcurrentHashMap<>();
 
     public RoomFrame(int userId, String userName) {
         this.userId = userId;
@@ -303,6 +307,18 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         lblTituloReunion.setForeground(Color.WHITE);
         pnlHeader.add(lblTituloReunion, BorderLayout.WEST);
 
+        JPanel pnlHeaderButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        pnlHeaderButtons.setOpaque(false);
+
+        JButton btnArchivos = new JButton("📂 Archivos");
+        btnArchivos.setBackground(new Color(41, 128, 185));
+        btnArchivos.setForeground(Color.WHITE);
+        btnArchivos.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnArchivos.setFocusPainted(false);
+        btnArchivos.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnArchivos.addActionListener(e -> solicitarListaArchivos());
+        pnlHeaderButtons.add(btnArchivos);
+
         JButton btnSalir = new JButton("Abandonar Sala");
         btnSalir.setBackground(new Color(192, 57, 43));
         btnSalir.setForeground(Color.WHITE);
@@ -310,7 +326,9 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         btnSalir.setFocusPainted(false);
         btnSalir.setCursor(new Cursor(Cursor.HAND_CURSOR));
         btnSalir.addActionListener(e -> abandonarReunion());
-        pnlHeader.add(btnSalir, BorderLayout.EAST);
+        pnlHeaderButtons.add(btnSalir);
+
+        pnlHeader.add(pnlHeaderButtons, BorderLayout.EAST);
 
         panel.add(pnlHeader, BorderLayout.NORTH);
 
@@ -368,6 +386,15 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         ));
         txtMensajeChat.addActionListener(e -> enviarMensajeChat());
         pnlChatInput.add(txtMensajeChat, BorderLayout.CENTER);
+
+        JButton btnAdjuntar = new JButton("📎");
+        btnAdjuntar.setBackground(new Color(127, 140, 141));
+        btnAdjuntar.setForeground(Color.WHITE);
+        btnAdjuntar.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        btnAdjuntar.setFocusPainted(false);
+        btnAdjuntar.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnAdjuntar.addActionListener(e -> seleccionarYSubirArchivo());
+        pnlChatInput.add(btnAdjuntar, BorderLayout.WEST);
 
         btnEnviarChat = new JButton("Enviar");
         btnEnviarChat.setBackground(new Color(41, 128, 185));
@@ -433,12 +460,25 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
     private void iniciarReunionHost() {
         // En este prototipo, el Host puede iniciar formalmente la reunión, llevando a todos los admitidos a la pantalla.
-        // Transitamos al Host a la pantalla de reunión directamente
-        lblTituloReunion.setText("Sala de Reunión Activa: Código " + roomCode);
-        cardLayout.show(mainContainer, "REUNION");
+        entrarAReunion();
         
         // Notificar en el chat del Host
         txtAreaChat.append("[SISTEMA] Has iniciado la reunión. ¡Bienvenidos!\n");
+    }
+
+    private void entrarAReunion() {
+        lblTituloReunion.setText("Sala de Reunión Activa: Código " + roomCode);
+        txtAreaChat.setText(""); // Limpiar chat previo para evitar duplicados
+        cardLayout.show(mainContainer, "REUNION");
+
+        // Enviar solicitud de historial de chat al servidor
+        MensajeSocket requestMsg = new MensajeSocket();
+        requestMsg.setType("CHAT_MESSAGE");
+        requestMsg.setRoomCode(roomCode);
+        requestMsg.setUserId(userId);
+        requestMsg.setUserName(userName);
+        requestMsg.setMessage("REQUEST_HISTORY");
+        ClienteConexion.getInstancia().enviarMensaje(requestMsg);
     }
 
     private void cancelarSolicitud() {
@@ -510,6 +550,22 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
                 procesarMensajeChat(mensaje);
                 break;
 
+            case "GET_FILES_RESPONSE":
+                procesarGetFilesResponse(mensaje);
+                break;
+ 
+            case "FILE_START":
+                procesarInicioDescarga(mensaje);
+                break;
+ 
+            case "FILE_CHUNK":
+                procesarChunkDescarga(mensaje);
+                break;
+ 
+            case "FILE_END":
+                procesarFinDescarga(mensaje);
+                break;
+
             default:
                 break;
         }
@@ -562,8 +618,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
             for (Map<String, Object> sol : solicitudes) {
                 // Parsear propiedades
-                double guestIdDouble = (double) sol.get("idUsuario");
-                int guestId = (int) guestIdDouble;
+                Number guestIdNum = (Number) sol.get("idUsuario");
+                int guestId = guestIdNum.intValue();
                 String guestName = (String) sol.get("nombres");
 
                 // Crear fila visual para el invitado
@@ -615,8 +671,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         SwingUtilities.invokeLater(() -> {
             String decision = mensaje.getMessage(); // "ACCEPTED" o "REJECTED"
             if ("ACCEPTED".equalsIgnoreCase(decision)) {
-                lblTituloReunion.setText("Sala de Reunión Activa: Código " + roomCode);
-                cardLayout.show(mainContainer, "REUNION");
+                entrarAReunion();
                 JOptionPane.showMessageDialog(this, "¡El anfitrión ha aceptado tu solicitud! Entrando a la sala...", "Acceso Admitido", JOptionPane.INFORMATION_MESSAGE);
             } else {
                 JOptionPane.showMessageDialog(this, "El anfitrión ha rechazado tu solicitud de ingreso.", "Acceso Denegado", JOptionPane.WARNING_MESSAGE);
@@ -644,5 +699,232 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             this.dispose();
             System.exit(0);
         });
+    }
+
+    private void seleccionarYSubirArchivo() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Seleccionar archivo para compartir");
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            java.io.File file = chooser.getSelectedFile();
+            if (file.length() > 5 * 1024 * 1024) { // Límite de 5 MB
+                JOptionPane.showMessageDialog(this, "El archivo supera el límite de 5 MB.", "Archivo muy grande", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            // Iniciar subida en hilo de fondo para no colgar el EDT
+            String fileId = java.util.UUID.randomUUID().toString().substring(0, 8);
+            String nombreArchivo = file.getName();
+            
+            new Thread(() -> {
+                try (java.io.FileInputStream fis = new java.io.FileInputStream(file)) {
+                    // 1. Enviar FILE_START
+                    MensajeSocket startMsg = new MensajeSocket();
+                    startMsg.setType("FILE_START");
+                    startMsg.setRoomCode(roomCode);
+                    startMsg.setUserId(userId);
+                    startMsg.setUserName(userName);
+                    startMsg.setMessage(fileId + "|" + nombreArchivo);
+                    ClienteConexion.getInstancia().enviarMensaje(startMsg);
+
+                    byte[] buffer = new byte[64 * 1024]; // 64 KB chunks
+                    int bytesLeidos;
+
+                    // 2. Enviar FILE_CHUNKs
+                    while ((bytesLeidos = fis.read(buffer)) != -1) {
+                        byte[] tempBuf = bytesLeidos == buffer.length ? buffer : java.util.Arrays.copyOf(buffer, bytesLeidos);
+                        String chunkBase64 = Base64.getEncoder().encodeToString(tempBuf);
+
+                        MensajeSocket chunkMsg = new MensajeSocket();
+                        chunkMsg.setType("FILE_CHUNK");
+                        chunkMsg.setRoomCode(roomCode);
+                        chunkMsg.setUserId(userId);
+                        chunkMsg.setUserName(userName);
+                        chunkMsg.setMessage(fileId + "|" + chunkBase64);
+                        ClienteConexion.getInstancia().enviarMensaje(chunkMsg);
+                        
+                        Thread.sleep(20); // Pausa corta
+                    }
+
+                    // 3. Enviar FILE_END
+                    MensajeSocket endMsg = new MensajeSocket();
+                    endMsg.setType("FILE_END");
+                    endMsg.setRoomCode(roomCode);
+                    endMsg.setUserId(userId);
+                    endMsg.setUserName(userName);
+                    endMsg.setMessage(fileId);
+                    ClienteConexion.getInstancia().enviarMensaje(endMsg);
+                    
+                    SwingUtilities.invokeLater(() -> {
+                        JOptionPane.showMessageDialog(this, "¡Archivo '" + nombreArchivo + "' enviado con éxito!", "Éxito", JOptionPane.INFORMATION_MESSAGE);
+                    });
+
+                } catch (Exception e) {
+                    System.err.println("[-] Error al subir archivo: " + e.getMessage());
+                    SwingUtilities.invokeLater(() -> {
+                        JOptionPane.showMessageDialog(this, "Error al subir archivo: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    });
+                }
+            }).start();
+        }
+    }
+
+    private void solicitarListaArchivos() {
+        MensajeSocket request = new MensajeSocket();
+        request.setType("GET_FILES_REQUEST");
+        request.setRoomCode(roomCode);
+        request.setUserId(userId);
+        request.setUserName(userName);
+        ClienteConexion.getInstancia().enviarMensaje(request);
+    }
+
+    private void procesarGetFilesResponse(MensajeSocket mensaje) {
+        SwingUtilities.invokeLater(() -> {
+            java.lang.reflect.Type listType = new TypeToken<List<Map<String, Object>>>() {}.getType();
+            List<Map<String, Object>> archivos = gson.fromJson(mensaje.getMessage(), listType);
+
+            // Crear el diálogo modal para ver los archivos
+            JDialog dialog = new JDialog(this, "Archivos Compartidos", true);
+            dialog.setSize(550, 350);
+            dialog.setLocationRelativeTo(this);
+            dialog.setLayout(new BorderLayout(10, 10));
+
+            JPanel pnlCentral = new JPanel(new BorderLayout(5, 5));
+            pnlCentral.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+            JLabel lblTitulo = new JLabel("Lista de Archivos de esta Sala:");
+            lblTitulo.setFont(new Font("Segoe UI", Font.BOLD, 14));
+            pnlCentral.add(lblTitulo, BorderLayout.NORTH);
+
+            // Tabla de archivos
+            String[] columnas = {"Archivo", "Compartido por", "Fecha"};
+            Object[][] datos = new Object[archivos.size()][3];
+            for (int i = 0; i < archivos.size(); i++) {
+                Map<String, Object> arch = archivos.get(i);
+                datos[i][0] = arch.get("nombreArchivo");
+                datos[i][1] = arch.get("nombres");
+                datos[i][2] = arch.get("fechaSubida");
+            }
+
+            JTable tabla = new JTable(datos, columnas) {
+                public boolean isCellEditable(int row, int column) { return false; }
+            };
+            tabla.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            tabla.setRowHeight(25);
+            JScrollPane scroll = new JScrollPane(tabla);
+            pnlCentral.add(scroll, BorderLayout.CENTER);
+
+            dialog.add(pnlCentral, BorderLayout.CENTER);
+
+            // Footer con botón de descarga
+            JPanel pnlFooter = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+            JButton btnDescargar = new JButton("Descargar Seleccionado");
+            btnDescargar.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            btnDescargar.setBackground(new Color(39, 174, 96));
+            btnDescargar.setForeground(Color.WHITE);
+            btnDescargar.setFocusPainted(false);
+            btnDescargar.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+            btnDescargar.addActionListener(e -> {
+                int filaSel = tabla.getSelectedRow();
+                if (filaSel == -1) {
+                    JOptionPane.showMessageDialog(dialog, "Seleccione un archivo de la lista.", "Selección requerida", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+
+                Map<String, Object> archSel = archivos.get(filaSel);
+                String nombreArchivo = (String) archSel.get("nombreArchivo");
+                String rutaFisica = (String) archSel.get("rutaArchivo");
+
+                // Solicitar destino de guardado
+                JFileChooser saveChooser = new JFileChooser();
+                saveChooser.setSelectedFile(new java.io.File(nombreArchivo));
+                saveChooser.setDialogTitle("Guardar archivo descargado");
+                
+                if (saveChooser.showSaveDialog(dialog) == JFileChooser.APPROVE_OPTION) {
+                    java.io.File destFile = saveChooser.getSelectedFile();
+                    try {
+                        java.io.FileOutputStream fos = new java.io.FileOutputStream(destFile);
+                        descargasEnProgreso.put(rutaFisica, fos);
+
+                        // Enviar solicitud de descarga
+                        MensajeSocket downloadReq = new MensajeSocket();
+                        downloadReq.setType("FILE_DOWNLOAD_REQUEST");
+                        downloadReq.setRoomCode(roomCode);
+                        downloadReq.setUserId(userId);
+                        downloadReq.setUserName(userName);
+                        downloadReq.setMessage(rutaFisica);
+                        ClienteConexion.getInstancia().enviarMensaje(downloadReq);
+
+                        JOptionPane.showMessageDialog(dialog, "Iniciando descarga de '" + nombreArchivo + "'...", "Descarga en curso", JOptionPane.INFORMATION_MESSAGE);
+                        dialog.dispose();
+
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(dialog, "Error al preparar archivo local: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            });
+
+            pnlFooter.add(btnDescargar);
+            dialog.add(pnlFooter, BorderLayout.SOUTH);
+
+            dialog.setVisible(true);
+        });
+    }
+
+    private void procesarInicioDescarga(MensajeSocket mensaje) {
+        String payload = mensaje.getMessage();
+        if (payload == null || !payload.contains("|")) return;
+
+        String[] partes = payload.split("\\|", 2);
+        String rutaFisica = partes[0];
+        
+        System.out.println("[*] Iniciando descarga local para: " + rutaFisica);
+    }
+
+    private void procesarChunkDescarga(MensajeSocket mensaje) {
+        String payload = mensaje.getMessage();
+        if (payload == null || !payload.contains("|")) return;
+
+        String[] partes = payload.split("\\|", 2);
+        String rutaFisica = partes[0];
+        String chunkBase64 = partes[1];
+
+        java.io.FileOutputStream fos = descargasEnProgreso.get(rutaFisica);
+        if (fos != null) {
+            try {
+                byte[] bytes = Base64.getDecoder().decode(chunkBase64);
+                fos.write(bytes);
+            } catch (Exception e) {
+                System.err.println("[-] Error al escribir chunk de descarga: " + e.getMessage());
+            }
+        }
+    }
+
+    private void procesarFinDescarga(MensajeSocket mensaje) {
+        String rutaFisica = mensaje.getMessage();
+        java.io.FileOutputStream fos = descargasEnProgreso.remove(rutaFisica);
+        if (fos != null) {
+            try {
+                fos.close();
+                String nombreArchivo = rutaFisica;
+                if (nombreArchivo.contains(java.io.File.separator)) {
+                    nombreArchivo = nombreArchivo.substring(nombreArchivo.lastIndexOf(java.io.File.separator) + 1);
+                }
+                if (nombreArchivo.contains("/")) {
+                    nombreArchivo = nombreArchivo.substring(nombreArchivo.lastIndexOf("/") + 1);
+                }
+                if (nombreArchivo.contains("_")) {
+                    nombreArchivo = nombreArchivo.substring(nombreArchivo.indexOf("_") + 1);
+                }
+                String finalNombre = nombreArchivo;
+                
+                SwingUtilities.invokeLater(() -> {
+                    JOptionPane.showMessageDialog(this, "¡La descarga de '" + finalNombre + "' ha finalizado con éxito!", "Descarga Completada", JOptionPane.INFORMATION_MESSAGE);
+                });
+                System.out.println("[OK] Descarga finalizada con éxito.");
+            } catch (Exception e) {
+                System.err.println("[-] Error al finalizar descarga: " + e.getMessage());
+            }
+        }
     }
 }

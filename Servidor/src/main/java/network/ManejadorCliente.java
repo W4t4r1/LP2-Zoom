@@ -132,6 +132,14 @@ public class ManejadorCliente implements Runnable {
                 ejecutarFinArchivo(mensaje);
                 break;
 
+            case "GET_FILES_REQUEST":
+                ejecutarListarArchivos(mensaje);
+                break;
+
+            case "FILE_DOWNLOAD_REQUEST":
+                ejecutarDescargarArchivo(mensaje);
+                break;
+
             default:
                 System.out.println("[!] Tipo de mensaje no soportado: " + tipo);
                 break;
@@ -266,6 +274,16 @@ public class ManejadorCliente implements Runnable {
 
     private void ejecutarMensajeChat(MensajeSocket mensaje) {
         if (this.userId == null || this.roomCode == null) return;
+
+        // Si es una solicitud de historial, no la persistimos ni retransmitimos; enviamos los mensajes previos
+        if ("REQUEST_HISTORY".equals(mensaje.getMessage())) {
+            System.out.println("[CHAT] Solicitando historial de mensajes para sala: " + this.roomCode);
+            List<MensajeSocket> historial = DBService.obtenerHistorialMensajes(this.roomCode);
+            for (MensajeSocket msg : historial) {
+                enviarMensaje(msg);
+            }
+            return;
+        }
 
         System.out.println("[CHAT] Mensaje recibido de " + this.userName + " en sala " + this.roomCode + ": " + mensaje.getMessage());
         
@@ -416,6 +434,99 @@ public class ManejadorCliente implements Runnable {
         } catch (Exception e) {
             System.err.println("[-] Error al cerrar recursos del socket: " + e.getMessage());
         }
+    }
+
+    private void ejecutarListarArchivos(MensajeSocket mensaje) {
+        if (this.userId == null || this.roomCode == null) return;
+
+        List<Map<String, Object>> archivos = DBService.obtenerArchivosCompartidos(this.roomCode);
+        String jsonArchivos = gson.toJson(archivos);
+
+        MensajeSocket respuesta = new MensajeSocket();
+        respuesta.setType("GET_FILES_RESPONSE");
+        respuesta.setRoomCode(this.roomCode);
+        respuesta.setMessage(jsonArchivos);
+        enviarMensaje(respuesta);
+        System.out.println("[->] Enviada lista de archivos al usuario " + this.userName);
+    }
+
+    private void ejecutarDescargarArchivo(MensajeSocket mensaje) {
+        if (this.userId == null || this.roomCode == null) return;
+
+        String rutaFisica = mensaje.getMessage(); // La ruta del archivo en el servidor
+        if (rutaFisica == null || rutaFisica.isEmpty()) return;
+
+        // --- SEGURIDAD: Evitar Directory Traversal ---
+        File file = new File(rutaFisica);
+        try {
+            String pathAbsoluto = file.getCanonicalPath();
+            File dirUploads = new File(DIRECTORIO_UPLOADS);
+            String uploadsAbsoluto = dirUploads.getCanonicalPath();
+
+            if (!pathAbsoluto.startsWith(uploadsAbsoluto)) {
+                System.err.println("[SECURITY WARNING] Intento de Directory Traversal por usuario ID " + this.userId + " con ruta: " + rutaFisica);
+                return;
+            }
+        } catch (Exception e) {
+            System.err.println("[-] Error de validación de seguridad: " + e.getMessage());
+            return;
+        }
+
+        if (!file.exists() || !file.isFile()) {
+            System.err.println("[-] El archivo solicitado no existe o no es válido: " + rutaFisica);
+            return;
+        }
+
+        // Obtener el nombre original quitando el prefijo "fileId_"
+        String nombreArchivo = file.getName();
+        if (nombreArchivo.contains("_")) {
+            nombreArchivo = nombreArchivo.substring(nombreArchivo.indexOf("_") + 1);
+        }
+
+        System.out.println("[*] Iniciando transmisión de descarga para: " + nombreArchivo + " (" + rutaFisica + ")");
+
+        // Iniciar un hilo secundario para enviar el archivo en chunks y no bloquear el ManejadorCliente
+        String finalNombreArchivo = nombreArchivo;
+        new Thread(() -> {
+            try (java.io.FileInputStream fis = new java.io.FileInputStream(file)) {
+                // 1. Enviar FILE_START al cliente
+                MensajeSocket startMsg = new MensajeSocket();
+                startMsg.setType("FILE_START");
+                startMsg.setRoomCode(this.roomCode);
+                startMsg.setMessage(rutaFisica + "|" + finalNombreArchivo);
+                enviarMensaje(startMsg);
+
+                byte[] buffer = new byte[64 * 1024]; // 64 KB chunks
+                int bytesLeidos;
+
+                // 2. Enviar FILE_CHUNKs
+                while ((bytesLeidos = fis.read(buffer)) != -1) {
+                    byte[] tempBuf = bytesLeidos == buffer.length ? buffer : java.util.Arrays.copyOf(buffer, bytesLeidos);
+                    String chunkBase64 = Base64.getEncoder().encodeToString(tempBuf);
+
+                    MensajeSocket chunkMsg = new MensajeSocket();
+                    chunkMsg.setType("FILE_CHUNK");
+                    chunkMsg.setRoomCode(this.roomCode);
+                    chunkMsg.setMessage(rutaFisica + "|" + chunkBase64);
+                    enviarMensaje(chunkMsg);
+                    
+                    // Un pequeño retardo para evitar saturar el buffer TCP
+                    Thread.sleep(10);
+                }
+
+                // 3. Enviar FILE_END
+                MensajeSocket endMsg = new MensajeSocket();
+                endMsg.setType("FILE_END");
+                endMsg.setRoomCode(this.roomCode);
+                endMsg.setMessage(rutaFisica);
+                enviarMensaje(endMsg);
+                
+                System.out.println("[OK] Transmisión de descarga completada para: " + finalNombreArchivo);
+
+            } catch (Exception e) {
+                System.err.println("[-] Error durante transmisión de descarga: " + e.getMessage());
+            }
+        }).start();
     }
 
     // --- GETTERS Y SETTERS ---
