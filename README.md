@@ -43,18 +43,51 @@ Para conocer a fondo el diseño, el contrato de datos o la configuración del en
 
 ## Guía Rápida de Ejecución
 
-Si deseas iniciar el proyecto localmente para pruebas, ejecuta los siguientes comandos desde tu consola en el directorio raíz de la aplicación:
+Si deseas iniciar el proyecto localmente para pruebas, tienes dos métodos genéricos que funcionarán en cualquier computadora (sin importar la ruta de usuario):
 
-### 1. Iniciar el Servidor de Sockets
-```powershell
-java -cp "bin_servidor;C:\Users\Jeanpier\.m2\repository\org\postgresql\postgresql\42.7.4\postgresql-42.7.4.jar;C:\Users\Jeanpier\.m2\repository\com\google\code\gson\gson\2.10.1\gson-2.10.1.jar" network.MainServidor
+### Método 1: Ejecución con Java CLI (Recomendado/Rápido)
+Este método utiliza los archivos ya compilados (`bin_servidor` y `bin_cliente`) y variables de entorno genéricas.
+
+#### 1. Iniciar el Servidor de Sockets
+Abre una terminal y ejecuta el comando según tu consola:
+*   **En Windows (PowerShell):**
+    ```powershell
+    java -cp "bin_servidor;$env:USERPROFILE\.m2\repository\org\postgresql\postgresql\42.7.4\postgresql-42.7.4.jar;$env:USERPROFILE\.m2\repository\com\google\code\gson\gson\2.10.1\gson-2.10.1.jar" network.MainServidor
+    ```
+*   **En Windows (CMD / Command Prompt):**
+    ```cmd
+    java -cp "bin_servidor;%USERPROFILE%\.m2\repository\org\postgresql\postgresql\42.7.4\postgresql-42.7.4.jar;%USERPROFILE%\.m2\repository\com\google\code\gson\gson\2.10.1\gson-2.10.1.jar" network.MainServidor
+    ```
+
+#### 2. Iniciar Clientes
+Abre terminales independientes por cada usuario y ejecuta:
+*   **En Windows (PowerShell):**
+    ```powershell
+    java -cp "bin_cliente;$env:USERPROFILE\.m2\repository\com\google\code\gson\gson\2.10.1\gson-2.10.1.jar" UI.LoginFrame
+    ```
+*   **En Windows (CMD / Command Prompt):**
+    ```cmd
+    java -cp "bin_cliente;%USERPROFILE%\.m2\repository\com\google\code\gson\gson\2.10.1\gson-2.10.1.jar" UI.LoginFrame
+    ```
+
+---
+
+### Método 2: Ejecución Directa con Maven (Si tienes Maven instalado globalmente)
+Si tienes el comando `mvn` configurado en tus variables de entorno, puedes compilar y ejecutar directamente desde el código fuente:
+
+#### 1. Iniciar el Servidor de Sockets
+```bash
+mvn -f Servidor/pom.xml compile exec:java -Dexec.mainClass="network.MainServidor"
 ```
 
-### 2. Iniciar Clientes
-Abre terminales independientes por cada usuario que desees conectar (Host y Guests) y ejecuta:
-```powershell
-java -cp "bin_cliente;C:\Users\Jeanpier\.m2\repository\com\google\code\gson\gson\2.10.1\gson-2.10.1.jar" UI.LoginFrame
+#### 2. Iniciar Clientes
+Abre terminales independientes por cada usuario y ejecuta:
+```bash
+mvn -f Cliente/pom.xml compile exec:java -Dexec.mainClass="UI.LoginFrame"
 ```
 
-*   **Credenciales de Anfitrión (Host):** `host@zoom.com` / `123456`
-*   **Credenciales de Invitado (Guest):** `invitado@zoom.com` / `123456`
+---
+
+### Credenciales de Prueba
+*   **Anfitrión (Host):** `host@zoom.com` / `123456`
+*   **Invitado (Guest):** `invitado@zoom.com` / `123456`
