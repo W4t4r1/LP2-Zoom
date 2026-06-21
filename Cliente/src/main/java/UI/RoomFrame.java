@@ -3,6 +3,7 @@ package UI;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.lang.reflect.Type;
@@ -16,6 +17,10 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import model.MensajeSocket;
 import network.ClienteConexion;
+import network.CameraSimulator;
+import javax.imageio.ImageIO;
+import java.io.ByteArrayInputStream;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener {
 
@@ -47,6 +52,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     private JTextField txtMensajeChat;
     private JButton btnEnviarChat;
     private JPanel pnlVideoGrid;
+    private java.util.Map<Integer, JLabel> videoFeeds = new ConcurrentHashMap<>();
+    private CameraSimulator cameraSimulator;
 
     private Gson gson;
     private java.util.Map<String, java.io.FileOutputStream> descargasEnProgreso = new java.util.concurrent.ConcurrentHashMap<>();
@@ -339,15 +346,18 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         splitPane.setDividerLocation(480);
         splitPane.setResizeWeight(0.6);
 
-        // Lado Izquierdo: Video Grid Placeholder (Fase 6)
-        pnlVideoGrid = new JPanel(new BorderLayout());
+        // Lado Izquierdo: Video Grid (Fase 6)
+        pnlVideoGrid = new JPanel(new GridLayout(2, 2, 6, 6));
         pnlVideoGrid.setBackground(new Color(20, 20, 25));
         pnlVideoGrid.setBorder(new LineBorder(new Color(45, 45, 50), 1, true));
-        
+
+        // Placeholder inicial: una celda con texto indicativo
         JLabel lblVideoPlaceholder = new JLabel("Cámaras Activas (Próxima Fase 6)", JLabel.CENTER);
         lblVideoPlaceholder.setFont(new Font("Segoe UI", Font.ITALIC, 14));
         lblVideoPlaceholder.setForeground(Color.LIGHT_GRAY);
-        pnlVideoGrid.add(lblVideoPlaceholder, BorderLayout.CENTER);
+        lblVideoPlaceholder.setOpaque(true);
+        lblVideoPlaceholder.setBackground(new Color(20, 20, 25));
+        pnlVideoGrid.add(lblVideoPlaceholder);
 
         splitPane.setLeftComponent(pnlVideoGrid);
 
@@ -479,6 +489,16 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         requestMsg.setUserName(userName);
         requestMsg.setMessage("REQUEST_HISTORY");
         ClienteConexion.getInstancia().enviarMensaje(requestMsg);
+
+        // Iniciar simulador de cámara local (fase 6 - simulación para pruebas)
+        try {
+            if (cameraSimulator == null) {
+                cameraSimulator = new CameraSimulator(userId, userName, roomCode);
+            }
+            cameraSimulator.start();
+        } catch (Exception ex) {
+            System.err.println("[-] No se pudo iniciar la cámara simulada: " + ex.getMessage());
+        }
     }
 
     private void cancelarSolicitud() {
@@ -503,6 +523,15 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             ClienteConexion.getInstancia().enviarMensaje(msg);
             System.out.println("[->] Enviado mensaje de salida de sala: " + roomCode);
             roomCode = null;
+            // Detener simulador de cámara si está corriendo
+            try {
+                if (cameraSimulator != null) {
+                    cameraSimulator.stop();
+                    cameraSimulator = null;
+                }
+            } catch (Exception ex) {
+                System.err.println("[-] Error al detener la cámara simulada: " + ex.getMessage());
+            }
         }
     }
 
@@ -548,6 +577,10 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
             case "CHAT_MESSAGE":
                 procesarMensajeChat(mensaje);
+                break;
+
+            case "CAMERA_FRAME":
+                procesarCameraFrame(mensaje);
                 break;
 
             case "GET_FILES_RESPONSE":
@@ -690,6 +723,55 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             // Auto-scroll al final del chat
             txtAreaChat.setCaretPosition(txtAreaChat.getDocument().getLength());
         });
+    }
+
+    private void procesarCameraFrame(MensajeSocket mensaje) {
+        String payload = mensaje.getMessage();
+        if (payload == null || payload.isEmpty()) return;
+
+        try {
+            byte[] bytes = Base64.getDecoder().decode(payload);
+            ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+            BufferedImage img = ImageIO.read(bais);
+            if (img == null) return;
+
+            Integer senderId = mensaje.getUserId();
+            String senderName = mensaje.getUserName();
+
+            SwingUtilities.invokeLater(() -> updateVideoFeed(senderId, senderName, img));
+        } catch (Exception e) {
+            System.err.println("[-] Error al procesar CAMERA_FRAME: " + e.getMessage());
+        }
+    }
+
+    private void updateVideoFeed(Integer senderId, String senderName, BufferedImage img) {
+        if (senderId == null) return;
+
+        JLabel lbl = videoFeeds.get(senderId);
+        ImageIcon icon = new ImageIcon(img.getScaledInstance(320, 240, Image.SCALE_SMOOTH));
+
+        if (lbl == null) {
+            JPanel panel = new JPanel(new BorderLayout());
+            panel.setBackground(new Color(20, 20, 25));
+
+            lbl = new JLabel(icon);
+            lbl.setHorizontalAlignment(JLabel.CENTER);
+            lbl.setVerticalAlignment(JLabel.CENTER);
+
+            JLabel nameLbl = new JLabel(senderName != null ? senderName : ("User " + senderId), JLabel.CENTER);
+            nameLbl.setForeground(Color.WHITE);
+            nameLbl.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+
+            panel.add(lbl, BorderLayout.CENTER);
+            panel.add(nameLbl, BorderLayout.SOUTH);
+
+            pnlVideoGrid.add(panel);
+            videoFeeds.put(senderId, lbl);
+            pnlVideoGrid.revalidate();
+            pnlVideoGrid.repaint();
+        } else {
+            lbl.setIcon(icon);
+        }
     }
 
     @Override
