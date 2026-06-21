@@ -14,7 +14,7 @@ Este documento registra las fases de desarrollo del proyecto, el estado actual d
 | **Fase 3: Gestión de Salas** | 🟢 Completado | 100% | Creación de salas, unión a salas, sala de espera con admisión interactiva (Admitir/Rechazar) y redireccionamiento automático a la reunión activa. |
 | **Fase 4: Chat en Tiempo Real** | 🟢 Completado | 100% | Difusión de mensajes en tiempo real, persistencia en Supabase, y carga automática del historial de chats al ingresar a la reunión. |
 | **Fase 5: Envío de Documentos** | 🟢 Completado | 100% | Compartición de archivos fragmentados por socket, listado interactivo en modal, descarga asíncrona segura con validación de rutas en servidor. |
-| **Fase 6: Transmisión de Cámara** | 🟡 Backend Listo | 50% | Servidor listo para retransmitir selectivamente fotogramas de video (`CAMERA_FRAME`). Falta integrar la captura local de webcam (o simulación fluida) y el refresco gráfico en el grid del cliente. |
+| **Fase 6: Transmisión de Cámara** | 🟡 En progreso | 70% | Servidor listo para retransmitir selectivamente fotogramas de video (`CAMERA_FRAME`). Cliente ya implementó simulación local de cámara y renderizado de video en `RoomFrame`. Falta integrar webcam real y controles de activación/desactivación de la cámara. |
 
 ---
 
@@ -91,6 +91,7 @@ Este documento registra las fases de desarrollo del proyecto, el estado actual d
     *   [x] Retransmisión selectiva de frames de imagen en Base64 (`CAMERA_FRAME`).
     *   [x] Exclusión automática del emisor en la retransmisión para ahorrar ancho de banda y evitar auto-renderizado.
 *   **Frontend (0% - Falta Integración Visual):**
-    *   [ ] Configurar captura periódica de la webcam local (o generar una transmisión simulada de imágenes locales si no hay webcam física).
-    *   [ ] Rutinas para redimensionar fotos a 320x240, comprimir a JPG y codificar a Base64.
-    *   [ ] Diseñar e implementar el grid de video (`pnlVideoGrid`) en [RoomFrame](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Cliente/src/main/java/UI/RoomFrame.java) para acomodar y refrescar dinámicamente los paneles de cada usuario activo con su correspondiente imagen.
+*   [x] Configurar captura periódica de la webcam local (o generar una transmisión simulada de imágenes locales si no hay webcam física).
+*   [x] Rutinas para redimensionar fotos a 320x240, comprimir a JPG y codificar a Base64.
+*   [x] Diseñar e implementar el grid de video (`pnlVideoGrid`) en [RoomFrame](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Cliente/src/main/java/UI/RoomFrame.java) para acomodar y refrescar dinámicamente los paneles de cada usuario activo con su correspondiente imagen.
+*   [ ] Añadir control de cámara ON/OFF en la UI y cambio de estado para iniciar/detener la transmisión.
