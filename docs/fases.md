@@ -94,4 +94,4 @@ Este documento registra las fases de desarrollo del proyecto, el estado actual d
 *   [x] Configurar captura periódica de la webcam local (o generar una transmisión simulada de imágenes locales si no hay webcam física).
 *   [x] Rutinas para redimensionar fotos a 320x240, comprimir a JPG y codificar a Base64.
 *   [x] Diseñar e implementar el grid de video (`pnlVideoGrid`) en [RoomFrame](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Cliente/src/main/java/UI/RoomFrame.java) para acomodar y refrescar dinámicamente los paneles de cada usuario activo con su correspondiente imagen.
-*   [ ] Añadir control de cámara ON/OFF en la UI y cambio de estado para iniciar/detener la transmisión.
+*   [x] Añadir control de cámara ON/OFF en la UI y cambio de estado para iniciar/detener la transmisión.
