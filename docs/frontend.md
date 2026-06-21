@@ -100,6 +100,8 @@ Se añadió soporte a nivel de cliente para enviar y recibir tramas `CAMERA_FRAM
 * El frontend decodifica las tramas recibidas, crea `ImageIcon`s y actualiza dinámicamente los widgets del grid de video.
 * El panel de video ya no muestra un placeholder de fase anterior; el área se centra usando un contenedor `FlowLayout` y solo muestra los feeds activos.
 * Se añadió un botón `Cámara: ON/OFF` en el encabezado de `RoomFrame` para activar o desactivar la transmisión de frames del simulador.
+* Se agregó la trama `CAMERA_STATE` para que el servidor notifique a los demás participantes cuando la cámara se apaga o enciende.
+* Cuando un cliente recibe `CAMERA_STATE = OFF`, se muestra un panel negro centrado con el texto "Cámara apagada" y el nombre del usuario.
 * Al apagar la cámara, el simulador se detiene y no se envían más `CAMERA_FRAME`. Al volver a encenderla, la simulación se reinicia automáticamente.
 
 Esto permite probar el flujo de video y controlar la transmisión directamente desde la UI de la reunión.

@@ -14,7 +14,7 @@ Este documento registra las fases de desarrollo del proyecto, el estado actual d
 | **Fase 3: Gestión de Salas** | 🟢 Completado | 100% | Creación de salas, unión a salas, sala de espera con admisión interactiva (Admitir/Rechazar) y redireccionamiento automático a la reunión activa. |
 | **Fase 4: Chat en Tiempo Real** | 🟢 Completado | 100% | Difusión de mensajes en tiempo real, persistencia en Supabase, y carga automática del historial de chats al ingresar a la reunión. |
 | **Fase 5: Envío de Documentos** | 🟢 Completado | 100% | Compartición de archivos fragmentados por socket, listado interactivo en modal, descarga asíncrona segura con validación de rutas en servidor. |
-| **Fase 6: Transmisión de Cámara** | 🟡 En progreso | 70% | Servidor listo para retransmitir selectivamente fotogramas de video (`CAMERA_FRAME`). Cliente ya implementó simulación local de cámara y renderizado de video en `RoomFrame`. Falta integrar webcam real y controles de activación/desactivación de la cámara. |
+| **Fase 6: Transmisión de Cámara** | 🟡 En progreso | 80% | Servidor listo para retransmitir selectivamente fotogramas de video (`CAMERA_FRAME`) y estados de cámara (`CAMERA_STATE`). Cliente ya implementó simulación local de cámara, renderizado de video, toggle ON/OFF y placeholder negro para cámara apagada en `RoomFrame`. Falta integrar webcam real y optimizar el rendimiento de la transmisión. |
 
 ---
 
