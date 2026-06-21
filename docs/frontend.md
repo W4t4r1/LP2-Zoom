@@ -98,6 +98,7 @@ Se añadió soporte a nivel de cliente para enviar y recibir tramas `CAMERA_FRAM
 * El simulador genera imágenes de 320x240 con animación simple, las comprime a JPG y las codifica a Base64.
 * Cada `CAMERA_FRAME` se transmite como mensaje JSON al servidor y se retransmite a los demás participantes de la sala.
 * El frontend decodifica las tramas recibidas, crea `ImageIcon`s y actualiza dinámicamente los widgets del grid de video.
+* El panel de video ya no muestra un placeholder de fase anterior; el área se centra usando un contenedor `FlowLayout` y solo muestra los feeds activos.
 
-Esto permite probar el flujo de video en la fase 6 sin depender de hardware de webcam.
+Esto permite probar el flujo de video sin depender de hardware de webcam.
 

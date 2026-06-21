@@ -346,18 +346,14 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         splitPane.setDividerLocation(480);
         splitPane.setResizeWeight(0.6);
 
-        // Lado Izquierdo: Video Grid (Fase 6)
-        pnlVideoGrid = new JPanel(new GridLayout(2, 2, 6, 6));
-        pnlVideoGrid.setBackground(new Color(20, 20, 25));
-        pnlVideoGrid.setBorder(new LineBorder(new Color(45, 45, 50), 1, true));
-
-        // Placeholder inicial: una celda con texto indicativo
-        JLabel lblVideoPlaceholder = new JLabel("Cámaras Activas (Próxima Fase 6)", JLabel.CENTER);
-        lblVideoPlaceholder.setFont(new Font("Segoe UI", Font.ITALIC, 14));
-        lblVideoPlaceholder.setForeground(Color.LIGHT_GRAY);
-        lblVideoPlaceholder.setOpaque(true);
-        lblVideoPlaceholder.setBackground(new Color(20, 20, 25));
-        pnlVideoGrid.add(lblVideoPlaceholder);
+// Lado Izquierdo: Video Grid
+         pnlVideoGrid = new JPanel(new BorderLayout());
+         pnlVideoGrid.setBackground(new Color(20, 20, 25));
+         pnlVideoGrid.setBorder(new LineBorder(new Color(45, 45, 50), 1, true));
+ 
+         pnlVideoContainer = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
+         pnlVideoContainer.setOpaque(false);
+         pnlVideoGrid.add(pnlVideoContainer, BorderLayout.CENTER);
 
         splitPane.setLeftComponent(pnlVideoGrid);
 
