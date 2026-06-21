@@ -52,6 +52,9 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     private JTextField txtMensajeChat;
     private JButton btnEnviarChat;
     private JPanel pnlVideoGrid;
+    private JPanel pnlVideoContainer;
+    private JButton btnToggleCamera;
+    private boolean camaraActiva = true;
     private java.util.Map<Integer, JLabel> videoFeeds = new ConcurrentHashMap<>();
     private CameraSimulator cameraSimulator;
 
@@ -326,6 +329,15 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         btnArchivos.addActionListener(e -> solicitarListaArchivos());
         pnlHeaderButtons.add(btnArchivos);
 
+        btnToggleCamera = new JButton("Cámara: ON");
+        btnToggleCamera.setBackground(new Color(46, 204, 113));
+        btnToggleCamera.setForeground(Color.WHITE);
+        btnToggleCamera.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnToggleCamera.setFocusPainted(false);
+        btnToggleCamera.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnToggleCamera.addActionListener(e -> toggleCamera());
+        pnlHeaderButtons.add(btnToggleCamera);
+
         JButton btnSalir = new JButton("Abandonar Sala");
         btnSalir.setBackground(new Color(192, 57, 43));
         btnSalir.setForeground(Color.WHITE);
@@ -486,12 +498,11 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         requestMsg.setMessage("REQUEST_HISTORY");
         ClienteConexion.getInstancia().enviarMensaje(requestMsg);
 
-        // Iniciar simulador de cámara local (fase 6 - simulación para pruebas)
+        // Iniciar simulador de cámara local si está activada
         try {
-            if (cameraSimulator == null) {
-                cameraSimulator = new CameraSimulator(userId, userName, roomCode);
+            if (camaraActiva) {
+                startCameraSimulator();
             }
-            cameraSimulator.start();
         } catch (Exception ex) {
             System.err.println("[-] No se pudo iniciar la cámara simulada: " + ex.getMessage());
         }
@@ -521,10 +532,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             roomCode = null;
             // Detener simulador de cámara si está corriendo
             try {
-                if (cameraSimulator != null) {
-                    cameraSimulator.stop();
-                    cameraSimulator = null;
-                }
+                stopCameraSimulator();
             } catch (Exception ex) {
                 System.err.println("[-] Error al detener la cámara simulada: " + ex.getMessage());
             }
@@ -761,10 +769,10 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             panel.add(lbl, BorderLayout.CENTER);
             panel.add(nameLbl, BorderLayout.SOUTH);
 
-            pnlVideoGrid.add(panel);
+            pnlVideoContainer.add(panel);
             videoFeeds.put(senderId, lbl);
-            pnlVideoGrid.revalidate();
-            pnlVideoGrid.repaint();
+            pnlVideoContainer.revalidate();
+            pnlVideoContainer.repaint();
         } else {
             lbl.setIcon(icon);
         }
@@ -1003,6 +1011,33 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             } catch (Exception e) {
                 System.err.println("[-] Error al finalizar descarga: " + e.getMessage());
             }
+        }
+    }
+
+    private void toggleCamera() {
+        camaraActiva = !camaraActiva;
+        btnToggleCamera.setText(camaraActiva ? "Cámara: ON" : "Cámara: OFF");
+        btnToggleCamera.setBackground(camaraActiva ? new Color(46, 204, 113) : new Color(192, 57, 43));
+        if (roomCode != null) {
+            if (camaraActiva) {
+                startCameraSimulator();
+            } else {
+                stopCameraSimulator();
+            }
+        }
+    }
+
+    private void startCameraSimulator() {
+        if (cameraSimulator == null) {
+            cameraSimulator = new CameraSimulator(userId, userName, roomCode);
+        }
+        cameraSimulator.start();
+    }
+
+    private void stopCameraSimulator() {
+        if (cameraSimulator != null) {
+            cameraSimulator.stop();
+            cameraSimulator = null;
         }
     }
 }
