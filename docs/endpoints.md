@@ -253,3 +253,18 @@ Envío periódico de imágenes de webcam locales. El servidor retransmite el fra
   "message": "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQ..."
 }
 ```
+
+#### `CAMERA_STATE` (Cliente → Servidor → Invitados de Sala)
+Notificación de activación/desactivación de cámara. El servidor retransmite el mensaje a los demás participantes de la sala (excluyendo al remitente) para que su UI muestre el estado de cámara apagada o encendida.
+*   `message`: `"ON"` o `"OFF"`.
+*   `roomCode`: Código de la sala activa.
+*   `userId`: ID del usuario que cambió el estado de cámara.
+
+```json
+{
+  "type": "CAMERA_STATE",
+  "roomCode": "17F082",
+  "userId": 2,
+  "message": "OFF"
+}
+```

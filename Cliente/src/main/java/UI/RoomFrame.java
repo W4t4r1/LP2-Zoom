@@ -3,6 +3,7 @@ package UI;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.lang.reflect.Type;
@@ -16,6 +17,10 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import model.MensajeSocket;
 import network.ClienteConexion;
+import network.CameraSimulator;
+import javax.imageio.ImageIO;
+import java.io.ByteArrayInputStream;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener {
 
@@ -47,6 +52,12 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     private JTextField txtMensajeChat;
     private JButton btnEnviarChat;
     private JPanel pnlVideoGrid;
+    private JPanel pnlVideoContainer;
+    private JButton btnToggleCamera;
+    private boolean camaraActiva = true;
+    private java.util.Map<Integer, JLabel> videoFeeds = new ConcurrentHashMap<>();
+    private java.util.Map<Integer, JPanel> videoFeedPanels = new ConcurrentHashMap<>();
+    private CameraSimulator cameraSimulator;
 
     private Gson gson;
     private java.util.Map<String, java.io.FileOutputStream> descargasEnProgreso = new java.util.concurrent.ConcurrentHashMap<>();
@@ -319,6 +330,15 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         btnArchivos.addActionListener(e -> solicitarListaArchivos());
         pnlHeaderButtons.add(btnArchivos);
 
+        btnToggleCamera = new JButton("Cámara: ON");
+        btnToggleCamera.setBackground(new Color(46, 204, 113));
+        btnToggleCamera.setForeground(Color.WHITE);
+        btnToggleCamera.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnToggleCamera.setFocusPainted(false);
+        btnToggleCamera.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnToggleCamera.addActionListener(e -> toggleCamera());
+        pnlHeaderButtons.add(btnToggleCamera);
+
         JButton btnSalir = new JButton("Abandonar Sala");
         btnSalir.setBackground(new Color(192, 57, 43));
         btnSalir.setForeground(Color.WHITE);
@@ -339,15 +359,14 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         splitPane.setDividerLocation(480);
         splitPane.setResizeWeight(0.6);
 
-        // Lado Izquierdo: Video Grid Placeholder (Fase 6)
-        pnlVideoGrid = new JPanel(new BorderLayout());
-        pnlVideoGrid.setBackground(new Color(20, 20, 25));
-        pnlVideoGrid.setBorder(new LineBorder(new Color(45, 45, 50), 1, true));
-        
-        JLabel lblVideoPlaceholder = new JLabel("Cámaras Activas (Próxima Fase 6)", JLabel.CENTER);
-        lblVideoPlaceholder.setFont(new Font("Segoe UI", Font.ITALIC, 14));
-        lblVideoPlaceholder.setForeground(Color.LIGHT_GRAY);
-        pnlVideoGrid.add(lblVideoPlaceholder, BorderLayout.CENTER);
+// Lado Izquierdo: Video Grid
+         pnlVideoGrid = new JPanel(new BorderLayout());
+         pnlVideoGrid.setBackground(new Color(20, 20, 25));
+         pnlVideoGrid.setBorder(new LineBorder(new Color(45, 45, 50), 1, true));
+ 
+         pnlVideoContainer = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
+         pnlVideoContainer.setOpaque(false);
+         pnlVideoGrid.add(pnlVideoContainer, BorderLayout.CENTER);
 
         splitPane.setLeftComponent(pnlVideoGrid);
 
@@ -479,6 +498,14 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         requestMsg.setUserName(userName);
         requestMsg.setMessage("REQUEST_HISTORY");
         ClienteConexion.getInstancia().enviarMensaje(requestMsg);
+
+        // Notificar el estado de cámara actual al entrar a la reunión
+        if (camaraActiva) {
+            enviarEstadoCamara("ON");
+            startCameraSimulator();
+        } else {
+            enviarEstadoCamara("OFF");
+        }
     }
 
     private void cancelarSolicitud() {
@@ -503,6 +530,12 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             ClienteConexion.getInstancia().enviarMensaje(msg);
             System.out.println("[->] Enviado mensaje de salida de sala: " + roomCode);
             roomCode = null;
+            // Detener simulador de cámara si está corriendo
+            try {
+                stopCameraSimulator();
+            } catch (Exception ex) {
+                System.err.println("[-] Error al detener la cámara simulada: " + ex.getMessage());
+            }
         }
     }
 
@@ -548,6 +581,14 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
             case "CHAT_MESSAGE":
                 procesarMensajeChat(mensaje);
+                break;
+
+            case "CAMERA_FRAME":
+                procesarCameraFrame(mensaje);
+                break;
+
+            case "CAMERA_STATE":
+                procesarEstadoCamara(mensaje);
                 break;
 
             case "GET_FILES_RESPONSE":
@@ -690,6 +731,102 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             // Auto-scroll al final del chat
             txtAreaChat.setCaretPosition(txtAreaChat.getDocument().getLength());
         });
+    }
+
+    private void procesarCameraFrame(MensajeSocket mensaje) {
+        String payload = mensaje.getMessage();
+        if (payload == null || payload.isEmpty()) return;
+
+        try {
+            byte[] bytes = Base64.getDecoder().decode(payload);
+            ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+            BufferedImage img = ImageIO.read(bais);
+            if (img == null) return;
+
+            Integer senderId = mensaje.getUserId();
+            String senderName = mensaje.getUserName();
+
+            SwingUtilities.invokeLater(() -> updateVideoFeed(senderId, senderName, img));
+        } catch (Exception e) {
+            System.err.println("[-] Error al procesar CAMERA_FRAME: " + e.getMessage());
+        }
+    }
+
+    private void procesarEstadoCamara(MensajeSocket mensaje) {
+        if (mensaje == null) return;
+        Integer senderId = mensaje.getUserId();
+        String senderName = mensaje.getUserName();
+        String estado = mensaje.getMessage();
+        if (senderId == null || estado == null) return;
+
+        SwingUtilities.invokeLater(() -> updateVideoState(senderId, senderName, estado));
+    }
+
+    private void updateVideoFeed(Integer senderId, String senderName, BufferedImage img) {
+        if (senderId == null) return;
+
+        JLabel lbl = getOrCreateFeedLabel(senderId, senderName);
+        if (lbl == null) return;
+
+        ImageIcon icon = new ImageIcon(img.getScaledInstance(320, 240, Image.SCALE_SMOOTH));
+        lbl.setIcon(icon);
+        lbl.setText("");
+
+        JPanel panel = videoFeedPanels.get(senderId);
+        if (panel != null) {
+            panel.setBackground(new Color(20, 20, 25));
+        }
+    }
+
+    private void updateVideoState(Integer senderId, String senderName, String estado) {
+        JLabel lbl = getOrCreateFeedLabel(senderId, senderName);
+        if (lbl == null) return;
+
+        JPanel panel = videoFeedPanels.get(senderId);
+        if (panel != null) {
+            if ("OFF".equalsIgnoreCase(estado)) {
+                panel.setBackground(Color.BLACK);
+                lbl.setIcon(null);
+                lbl.setText("Cámara apagada");
+                lbl.setForeground(Color.WHITE);
+                lbl.setFont(new Font("Segoe UI", Font.BOLD, 16));
+            } else {
+                panel.setBackground(new Color(20, 20, 25));
+                lbl.setText("");
+            }
+        }
+    }
+
+    private JLabel getOrCreateFeedLabel(Integer senderId, String senderName) {
+        JLabel lbl = videoFeeds.get(senderId);
+        JPanel panel = videoFeedPanels.get(senderId);
+
+        if (panel == null) {
+            panel = new JPanel(new BorderLayout());
+            panel.setPreferredSize(new Dimension(320, 240));
+            panel.setBackground(new Color(20, 20, 25));
+            panel.setBorder(BorderFactory.createLineBorder(new Color(70, 70, 80), 1, true));
+
+            lbl = new JLabel();
+            lbl.setHorizontalAlignment(JLabel.CENTER);
+            lbl.setVerticalAlignment(JLabel.CENTER);
+            lbl.setForeground(Color.WHITE);
+            lbl.setFont(new Font("Segoe UI", Font.BOLD, 14));
+            panel.add(lbl, BorderLayout.CENTER);
+
+            JLabel nameLbl = new JLabel(senderName != null ? senderName : ("User " + senderId), JLabel.CENTER);
+            nameLbl.setForeground(Color.WHITE);
+            nameLbl.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            panel.add(nameLbl, BorderLayout.SOUTH);
+
+            pnlVideoContainer.add(panel);
+            videoFeeds.put(senderId, lbl);
+            videoFeedPanels.put(senderId, panel);
+            pnlVideoContainer.revalidate();
+            pnlVideoContainer.repaint();
+        }
+
+        return lbl;
     }
 
     @Override
@@ -925,6 +1062,46 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             } catch (Exception e) {
                 System.err.println("[-] Error al finalizar descarga: " + e.getMessage());
             }
+        }
+    }
+
+    private void toggleCamera() {
+        camaraActiva = !camaraActiva;
+        btnToggleCamera.setText(camaraActiva ? "Cámara: ON" : "Cámara: OFF");
+        btnToggleCamera.setBackground(camaraActiva ? new Color(46, 204, 113) : new Color(192, 57, 43));
+        if (roomCode != null) {
+            if (camaraActiva) {
+                enviarEstadoCamara("ON");
+                startCameraSimulator();
+            } else {
+                enviarEstadoCamara("OFF");
+                stopCameraSimulator();
+            }
+        }
+    }
+
+    private void enviarEstadoCamara(String estado) {
+        if (roomCode == null) return;
+        MensajeSocket estadoMsg = new MensajeSocket();
+        estadoMsg.setType("CAMERA_STATE");
+        estadoMsg.setRoomCode(roomCode);
+        estadoMsg.setUserId(userId);
+        estadoMsg.setUserName(userName);
+        estadoMsg.setMessage(estado);
+        ClienteConexion.getInstancia().enviarMensaje(estadoMsg);
+    }
+
+    private void startCameraSimulator() {
+        if (cameraSimulator == null) {
+            cameraSimulator = new CameraSimulator(userId, userName, roomCode);
+        }
+        cameraSimulator.start();
+    }
+
+    private void stopCameraSimulator() {
+        if (cameraSimulator != null) {
+            cameraSimulator.stop();
+            cameraSimulator = null;
         }
     }
 }

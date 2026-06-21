@@ -89,3 +89,20 @@ stateDiagram-R
 2.  **HOST (Sala de Espera del Anfitrión):** Panel exclusivo del Host. Muestra el código de la sala generada y despliega dinámicamente el listado de candidatos en cola recibidos vía `WAITING_ROOM_UPDATE`. Contiene controles interactivos individuales para **Admitir** o **Rechazar**.
 3.  **INVITADO (Pantalla de Espera):** Pantalla de bloqueo para el invitado con una barra de progreso indeterminada. Los controles están bloqueados hasta recibir la trama `ADMIT_USER` con el mensaje `ACCEPTED` (que cambia la pantalla a `REUNION`) o `REJECTED` (que lo regresa a la pantalla `SELECTOR`).
 4.  **REUNION (Videoconferencia Activa):** Interfaz unificada de chat de texto, visor de grid de video y gestor de carga/descarga de archivos compartidos.
+
+## 4.1 Transmisión de cámara simulada
+
+Se añadió soporte a nivel de cliente para enviar y recibir tramas `CAMERA_FRAME` usando un simulador local en lugar de una webcam real. El `RoomFrame` ahora contiene un `pnlVideoGrid` basado en `GridLayout` que renderiza imágenes JPEG codificadas en Base64 recibidas desde el servidor.
+
+* El cliente crea un `CameraSimulator` al entrar a la reunión y lo detiene al abandonar la sala.
+* El simulador genera imágenes de 320x240 con animación simple, las comprime a JPG y las codifica a Base64.
+* Cada `CAMERA_FRAME` se transmite como mensaje JSON al servidor y se retransmite a los demás participantes de la sala.
+* El frontend decodifica las tramas recibidas, crea `ImageIcon`s y actualiza dinámicamente los widgets del grid de video.
+* El panel de video ya no muestra un placeholder de fase anterior; el área se centra usando un contenedor `FlowLayout` y solo muestra los feeds activos.
+* Se añadió un botón `Cámara: ON/OFF` en el encabezado de `RoomFrame` para activar o desactivar la transmisión de frames del simulador.
+* Se agregó la trama `CAMERA_STATE` para que el servidor notifique a los demás participantes cuando la cámara se apaga o enciende.
+* Cuando un cliente recibe `CAMERA_STATE = OFF`, se muestra un panel negro centrado con el texto "Cámara apagada" y el nombre del usuario.
+* Al apagar la cámara, el simulador se detiene y no se envían más `CAMERA_FRAME`. Al volver a encenderla, la simulación se reinicia automáticamente.
+
+Esto permite probar el flujo de video y controlar la transmisión directamente desde la UI de la reunión.
+
