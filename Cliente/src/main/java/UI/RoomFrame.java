@@ -17,6 +17,7 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import model.MensajeSocket;
 import network.ClienteConexion;
+import network.CameraCapture;
 import network.CameraSimulator;
 import javax.imageio.ImageIO;
 import java.io.ByteArrayInputStream;
@@ -57,7 +58,9 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     private boolean camaraActiva = true;
     private java.util.Map<Integer, JLabel> videoFeeds = new ConcurrentHashMap<>();
     private java.util.Map<Integer, JPanel> videoFeedPanels = new ConcurrentHashMap<>();
+    private CameraCapture cameraCapture;
     private CameraSimulator cameraSimulator;
+    private boolean usingCameraCapture = false;
 
     private Gson gson;
     private java.util.Map<String, java.io.FileOutputStream> descargasEnProgreso = new java.util.concurrent.ConcurrentHashMap<>();
@@ -502,7 +505,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         // Notificar el estado de cámara actual al entrar a la reunión
         if (camaraActiva) {
             enviarEstadoCamara("ON");
-            startCameraSimulator();
+            startCameraSource();
         } else {
             enviarEstadoCamara("OFF");
         }
@@ -532,9 +535,9 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             roomCode = null;
             // Detener simulador de cámara si está corriendo
             try {
-                stopCameraSimulator();
+                stopCameraSource();
             } catch (Exception ex) {
-                System.err.println("[-] Error al detener la cámara simulada: " + ex.getMessage());
+                System.err.println("[-] Error al detener la cámara: " + ex.getMessage());
             }
         }
     }
@@ -1072,10 +1075,10 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         if (roomCode != null) {
             if (camaraActiva) {
                 enviarEstadoCamara("ON");
-                startCameraSimulator();
+                startCameraSource();
             } else {
                 enviarEstadoCamara("OFF");
-                stopCameraSimulator();
+                stopCameraSource();
             }
         }
     }
@@ -1091,17 +1094,33 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         ClienteConexion.getInstancia().enviarMensaje(estadoMsg);
     }
 
-    private void startCameraSimulator() {
+    private void startCameraSource() {
+        if (cameraCapture == null) {
+            cameraCapture = new CameraCapture(userId, userName, roomCode);
+        }
+
+        if (cameraCapture.start()) {
+            usingCameraCapture = true;
+            return;
+        }
+
+        // Si no se encuentra cámara física, usar simulador de respaldo.
+        usingCameraCapture = false;
         if (cameraSimulator == null) {
             cameraSimulator = new CameraSimulator(userId, userName, roomCode);
         }
         cameraSimulator.start();
     }
 
-    private void stopCameraSimulator() {
+    private void stopCameraSource() {
+        if (cameraCapture != null) {
+            cameraCapture.stop();
+            cameraCapture = null;
+        }
         if (cameraSimulator != null) {
             cameraSimulator.stop();
             cameraSimulator = null;
         }
+        usingCameraCapture = false;
     }
 }
