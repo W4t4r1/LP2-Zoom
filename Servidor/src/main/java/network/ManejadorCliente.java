@@ -116,6 +116,10 @@ public class ManejadorCliente implements Runnable {
                 ejecutarFrameCamara(mensaje);
                 break;
 
+            case "CAMERA_STATE":
+                ejecutarEstadoCamara(mensaje);
+                break;
+
             case "LEAVE_ROOM":
                 ejecutarSalirSala(mensaje);
                 break;
@@ -298,6 +302,13 @@ public class ManejadorCliente implements Runnable {
         if (this.userId == null || this.roomCode == null) return;
 
         // Retransmitir frame a todos en la sala menos al remitente
+        MainServidor.retransmitirMensaje(mensaje, this.userId);
+    }
+
+    private void ejecutarEstadoCamara(MensajeSocket mensaje) {
+        if (this.userId == null || this.roomCode == null) return;
+
+        // Retransmitir estado de cámara a todos los miembros de la sala menos al remitente
         MainServidor.retransmitirMensaje(mensaje, this.userId);
     }
 
