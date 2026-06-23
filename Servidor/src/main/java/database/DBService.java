@@ -266,6 +266,32 @@ public class DBService {
     }
 
     /**
+     * Obtiene los IDs de los participantes activos de una sala admitida.
+     */
+    public static List<Integer> obtenerParticipantesActivos(String codigoSala) {
+        List<Integer> participantes = new ArrayList<>();
+        int idSala = obtenerIdSalaPorCodigo(codigoSala);
+        if (idSala == -1) {
+            return participantes;
+        }
+
+        String query = "SELECT IdUsuario FROM ParticipantesSala WHERE IdSala = ? AND Estado = 'ACTIVO'";
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement(query)) {
+            ps.setInt(1, idSala);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    participantes.add(rs.getInt("IdUsuario"));
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("[DB ERROR] Error al obtener participantes activos: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return participantes;
+    }
+
+    /**
      * Persiste un mensaje de chat enviado por un usuario en una sala.
      */
     public static boolean guardarMensaje(String codigoSala, int idUsuario, String contenido) {

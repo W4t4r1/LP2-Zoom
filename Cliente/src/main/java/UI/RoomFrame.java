@@ -47,6 +47,9 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     private JLabel lblMensajeEspera;
     private JButton btnCancelarSolicitud;
 
+    // --- CARD 3b: Invitado admitido, esperando inicio de reunión ---
+    private JLabel lblMensajeEsperaAdmitido;
+
     // --- CARD 4: Panel de Reunión Activa (Meeting View) ---
     private JLabel lblTituloReunion;
     private JTextArea txtAreaChat;
@@ -91,10 +94,11 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         cardLayout = new CardLayout();
         mainContainer = new JPanel(cardLayout);
 
-        // Inicializar las 4 pantallas (Cards)
+        // Inicializar las 5 pantallas (Cards)
         inicializarPantallaSelector();
         inicializarPantallaHost();
         inicializarPantallaInvitado();
+        inicializarPantallaInvitadoAdmitido();
         inicializarPantallaReunion();
 
         add(mainContainer);
@@ -301,6 +305,47 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     }
 
     // =========================================================================
+    // 3b. CARD "INVITADO_ADMITIDO": Invitado admitido, esperando inicio de reunión
+    // =========================================================================
+    private void inicializarPantallaInvitadoAdmitido() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBackground(Color.WHITE);
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(15, 15, 15, 15);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        JLabel lblLogo = new JLabel("Admitido", JLabel.CENTER);
+        lblLogo.setFont(new Font("Segoe UI", Font.BOLD, 26));
+        lblLogo.setForeground(new Color(39, 174, 96));
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        panel.add(lblLogo, gbc);
+
+        lblMensajeEsperaAdmitido = new JLabel("Has sido admitido. Esperando que el anfitrión inicie la reunión...", JLabel.CENTER);
+        lblMensajeEsperaAdmitido.setFont(new Font("Segoe UI", Font.PLAIN, 15));
+        gbc.gridy = 1;
+        panel.add(lblMensajeEsperaAdmitido, gbc);
+
+        JProgressBar progress = new JProgressBar();
+        progress.setIndeterminate(true);
+        progress.setForeground(new Color(39, 174, 96));
+        gbc.gridy = 2;
+        panel.add(progress, gbc);
+
+        JButton btnCancelarEsperando = new JButton("Abandonar Sala");
+        btnCancelarEsperando.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        btnCancelarEsperando.setBackground(new Color(192, 57, 43));
+        btnCancelarEsperando.setForeground(Color.WHITE);
+        btnCancelarEsperando.setFocusPainted(false);
+        btnCancelarEsperando.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnCancelarEsperando.addActionListener(e -> cancelarSolicitud());
+        gbc.gridy = 3;
+        panel.add(btnCancelarEsperando, gbc);
+
+        mainContainer.add(panel, "INVITADO_ADMITIDO");
+    }
+
+    // =========================================================================
     // 4. CARD "REUNION": Pantalla de Reunión Activa (Chat y Video Grid)
     // =========================================================================
     private void inicializarPantallaReunion() {
@@ -481,11 +526,18 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     }
 
     private void iniciarReunionHost() {
-        // En este prototipo, el Host puede iniciar formalmente la reunión, llevando a todos los admitidos a la pantalla.
-        entrarAReunion();
-        
-        // Notificar en el chat del Host
-        txtAreaChat.append("[SISTEMA] Has iniciado la reunión. ¡Bienvenidos!\n");
+        if (roomCode == null) return;
+
+        MensajeSocket msg = new MensajeSocket();
+        msg.setType("START_MEETING_REQUEST");
+        msg.setRoomCode(roomCode);
+        msg.setUserId(userId);
+        msg.setUserName(userName);
+        msg.setMessage("REQUEST_START");
+
+        ClienteConexion.getInstancia().enviarMensaje(msg);
+        btnIniciarReunion.setEnabled(false);
+        txtAreaChat.append("[SISTEMA] Petición de inicio de reunión enviada. Esperando confirmación...\n");
     }
 
     private void entrarAReunion() {
@@ -580,6 +632,10 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
             case "ADMIT_USER":
                 procesarAdmisionUsuario(mensaje);
+                break;
+
+            case "MEETING_STARTED":
+                procesarMeetingStarted(mensaje);
                 break;
 
             case "CHAT_MESSAGE":
@@ -715,13 +771,22 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         SwingUtilities.invokeLater(() -> {
             String decision = mensaje.getMessage(); // "ACCEPTED" o "REJECTED"
             if ("ACCEPTED".equalsIgnoreCase(decision)) {
-                entrarAReunion();
-                JOptionPane.showMessageDialog(this, "¡El anfitrión ha aceptado tu solicitud! Entrando a la sala...", "Acceso Admitido", JOptionPane.INFORMATION_MESSAGE);
+                lblMensajeEsperaAdmitido.setText("¡Has sido admitido! Esperando que el anfitrión inicie la reunión...");
+                cardLayout.show(mainContainer, "INVITADO_ADMITIDO");
+                JOptionPane.showMessageDialog(this, "¡El anfitrión ha aceptado tu solicitud! Espera a que inicie la reunión.", "Acceso Admitido", JOptionPane.INFORMATION_MESSAGE);
             } else {
                 JOptionPane.showMessageDialog(this, "El anfitrión ha rechazado tu solicitud de ingreso.", "Acceso Denegado", JOptionPane.WARNING_MESSAGE);
                 this.roomCode = null;
                 cardLayout.show(mainContainer, "SELECTOR");
             }
+        });
+    }
+
+    private void procesarMeetingStarted(MensajeSocket mensaje) {
+        SwingUtilities.invokeLater(() -> {
+            this.roomCode = mensaje.getRoomCode();
+            entrarAReunion();
+            JOptionPane.showMessageDialog(this, "La reunión ha comenzado. Bienvenido(a).", "Reunión iniciada", JOptionPane.INFORMATION_MESSAGE);
         });
     }
 
