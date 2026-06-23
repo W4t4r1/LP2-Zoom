@@ -85,9 +85,27 @@ stateDiagram-R
     REUNION --> SELECTOR : Abandonar reunión
 ```
 
+```mermaid
+sequenceDiagram
+    participant G as Invitado
+    participant S as Servidor
+    participant H as Host
+
+    G->>S: JOIN_ROOM_REQUEST
+    S->>H: WAITING_ROOM_UPDATE
+    H->>S: ADMIT_USER (ACCEPTED)
+    S->>G: ADMIT_USER (ACCEPTED)
+    Note right of G: Estado INVITADO_ADMITIDO
+    H->>S: START_MEETING_REQUEST
+    S->>H: MEETING_STARTED
+    S->>G: MEETING_STARTED
+    G->>G: Entrar a REUNION
+    H->>H: Entrar a REUNION
+```
+
 1.  **SELECTOR (Selección de Rol):** Panel que ofrece crear una sala (Host) o ingresar el código de 6 caracteres para unirse (Invitado).
-2.  **HOST (Sala de Espera del Anfitrión):** Panel exclusivo del Host. Muestra el código de la sala generada y despliega dinámicamente el listado de candidatos en cola recibidos vía `WAITING_ROOM_UPDATE`. Contiene controles interactivos individuales para **Admitir** o **Rechazar**.
-3.  **INVITADO (Pantalla de Espera):** Pantalla de bloqueo para el invitado con una barra de progreso indeterminada. Los controles están bloqueados hasta recibir la trama `ADMIT_USER` con el mensaje `ACCEPTED` (que cambia la pantalla a `REUNION`) o `REJECTED` (que lo regresa a la pantalla `SELECTOR`).
+2.  **HOST (Sala de Espera del Anfitrión):** Panel exclusivo del Host. Muestra el código de la sala generada y despliega dinámicamente el listado de candidatos en cola recibidos vía `WAITING_ROOM_UPDATE`. Contiene controles interactivos individuales para **Admitir** o **Rechazar**. Una vez admitidos los invitados, el Host debe enviar explícitamente el mensaje `START_MEETING_REQUEST` para iniciar la reunión.
+3.  **INVITADO (Pantalla de Espera):** Pantalla de bloqueo para el invitado con una barra de progreso indeterminada. Los controles están bloqueados hasta recibir la trama `ADMIT_USER` con el mensaje `ACCEPTED`, tras lo cual el invitado pasa a un estado de espera admitido (`INVITADO_ADMITIDO`). Solo después de recibir la trama `MEETING_STARTED` el invitado se redirige a la pantalla `REUNION`. Si recibe `REJECTED`, regresa a la pantalla `SELECTOR`.
 4.  **REUNION (Videoconferencia Activa):** Interfaz unificada de chat de texto, visor de grid de video y gestor de carga/descarga de archivos compartidos.
 
 ## 4.1 Transmisión de cámara simulada
