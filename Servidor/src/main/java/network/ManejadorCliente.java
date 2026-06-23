@@ -28,6 +28,7 @@ public class ManejadorCliente implements Runnable {
     private Integer userId;
     private String userName;
     private String roomCode;
+    private boolean admittedToRoom = false;
 
     // Directorio de almacenamiento de archivos
     private static final String DIRECTORIO_UPLOADS = "uploads";
@@ -106,6 +107,10 @@ public class ManejadorCliente implements Runnable {
 
             case "ADMIT_USER":
                 ejecutarAdmitirUsuario(mensaje);
+                break;
+
+            case "START_MEETING_REQUEST":
+                ejecutarIniciarReunion(mensaje);
                 break;
 
             case "CHAT_MESSAGE":
@@ -195,6 +200,7 @@ public class ManejadorCliente implements Runnable {
             this.roomCode = codigoSala;
             // Registrar al anfitrión directamente como participante
             DBService.agregarParticipante(codigoSala, this.userId);
+            this.admittedToRoom = true;
             
             respuesta.setRoomCode(codigoSala);
             respuesta.setMessage("SUCCESS");
@@ -220,6 +226,7 @@ public class ManejadorCliente implements Runnable {
 
         if (registrada) {
             this.roomCode = codigo; // Queda asignada la sala del socket temporalmente
+            this.admittedToRoom = false;
             respuesta.setMessage("PENDIENTE");
             System.out.println("[OK] Solicitud registrada como PENDIENTE para " + this.userName);
             
@@ -266,14 +273,47 @@ public class ManejadorCliente implements Runnable {
                 
                 if (nuevoEstado.equals("ACEPTADO")) {
                     invitadoManejador.setRoomCode(codigo); // Se confirma su inclusión en la sala
+                    invitadoManejador.setAdmittedToRoom(true);
                 } else {
                     invitadoManejador.setRoomCode(null);  // Remueve sala temporal
+                    invitadoManejador.setAdmittedToRoom(false);
                 }
             }
-            
             // Enviar la lista de espera actualizada al Host
             notificarActualizacionSalaEspera(codigo);
         }
+    }
+
+    private void ejecutarIniciarReunion(MensajeSocket mensaje) {
+        if (this.userId == null) return;
+
+        String codigo = mensaje.getRoomCode();
+        int hostId = DBService.obtenerHostIdPorCodigo(codigo);
+        if (hostId != this.userId) {
+            System.err.println("[WARNING] Usuario ID " + this.userId + " intentó iniciar reunión sin ser host en sala " + codigo);
+            return;
+        }
+
+        // Notificar al host para que entre a la reunión
+        MensajeSocket notifHost = new MensajeSocket();
+        notifHost.setType("MEETING_STARTED");
+        notifHost.setRoomCode(codigo);
+        notifHost.setMessage("STARTED");
+        this.enviarMensaje(notifHost);
+
+        List<Integer> participantes = DBService.obtenerParticipantesActivos(codigo);
+        for (Integer participanteId : participantes) {
+            ManejadorCliente participante = MainServidor.clientesActivos.get(participanteId);
+            if (participante != null) {
+                MensajeSocket notif = new MensajeSocket();
+                notif.setType("MEETING_STARTED");
+                notif.setRoomCode(codigo);
+                notif.setMessage("STARTED");
+                participante.enviarMensaje(notif);
+            }
+        }
+
+        System.out.println("[OK] Reunión iniciada en sala " + codigo + " por host ID " + this.userId + ". Participantes notificados: " + participantes.size());
     }
 
     private void ejecutarMensajeChat(MensajeSocket mensaje) {
@@ -545,4 +585,6 @@ public class ManejadorCliente implements Runnable {
     public String getUserName() { return userName; }
     public String getRoomCode() { return roomCode; }
     public void setRoomCode(String roomCode) { this.roomCode = roomCode; }
+    public boolean isAdmittedToRoom() { return admittedToRoom; }
+    public void setAdmittedToRoom(boolean admittedToRoom) { this.admittedToRoom = admittedToRoom; }
 }

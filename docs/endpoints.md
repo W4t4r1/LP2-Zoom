@@ -100,7 +100,9 @@ Petición para entrar en cola a una sala existente.
 Respuesta a la postulación del invitado.
 *   `roomCode`: Código de la sala.
 *   `message`: `"PENDIENTE"` (solicitud en cola en espera del host) o `"ERROR: La sala no existe"`.
-
+*   `ADMIT_USER` / `MEETING_STARTED`:
+    *   `ADMIT_USER` se envía desde el servidor al invitado para indicar que el host ha aceptado o rechazado la solicitud.
+    *   `MEETING_STARTED` se envía desde el servidor a todos los invitados admitidos y al host cuando este último inicia la reunión.
 ```json
 {
   "type": "JOIN_ROOM_RESPONSE",
