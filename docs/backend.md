@@ -106,32 +106,13 @@ private void procesarMensaje(MensajeSocket mensaje) {
 El servidor almacena los usuarios autenticados en un mapa concurrente global (`MainServidor.clientesActivos` de tipo `ConcurrentHashMap<Integer, ManejadorCliente>`). Esto permite mapear el `userId` numérico del usuario con su respectivo hilo de comunicación activa, facilitando la retransmisión de mensajes.
 
 ### B. Desconexión Limpia y Robusta
-Cuando un socket cliente se desconecta (ya sea por enviar un mensaje de `LEAVE_ROOM` de forma explícita o por una pérdida abrupta de la conexión física TCP que produce un fin de stream o error de E/S), se invoca el método `desconectar()`:
+Cuando un socket cliente se desconecta (ya sea por enviar un mensaje de `LEAVE_ROOM` de forma explícita o por una pérdida abrupta de la conexión física TCP que produce un fin de stream o error de E/S), se invoca el método `desconectar()` o se procesa `ejecutarSalirSala()`.
 
-```java
-// Limpieza de recursos al cerrar la sesión de un cliente
-private void desconectar() {
-    try {
-        if (this.userId != null) {
-            // 1. Remover del mapa de conexiones activas
-            MainServidor.clientesActivos.remove(this.userId);
-            
-            // 2. Si estaba en una sala activa, marcar su salida de la BD
-            if (this.roomCode != null) {
-                DBService.actualizarEstadoSolicitud(this.roomCode, this.userId, "RECHAZADO");
-                
-                // 3. Notificar a los demás integrantes de la sala sobre la salida
-                MensajeSocket alerta = new MensajeSocket("CHAT_MESSAGE", this.roomCode, 0, "SISTEMA", this.userName + " se ha desconectado.", null);
-                MainServidor.retransmitirMensaje(alerta, null);
-            }
-        }
-        // 4. Cerrar sockets y flujos de datos físicos
-        if (socketCliente != null && !socketCliente.isClosed()) {
-            socketCliente.close();
-        }
-    } catch (Exception e) {
-        System.err.println("[-] Error cerrando socket para " + this.userName + ": " + e.getMessage());
-    }
-}
-```
-Esto garantiza que no existan fugas de memoria (hilos huérfanos que consuman recursos) ni inconsistencias en las interfaces de los demás participantes que siguen conectados en la sala.
+Para asegurar que las cámaras de los demás participantes dejen de procesarse y no se queden congeladas:
+1. **Difusión de Apagado de Cámara:** Antes de remover al participante de la sala y de la base de datos, el hilo de su socket genera y retransmite un mensaje con tipo `CAMERA_STATE` y contenido `"OFF"` dirigido a todos los demás integrantes activos en la sala.
+2. **Remoción de Conexiones Activas:** Se retira al usuario del mapa concurrente global `MainServidor.clientesActivos`.
+3. **Persistencia del Estado:** Se actualiza el estado de la solicitud en Supabase a `"RECHAZADO"` (desconectado).
+4. **Mensaje de Sistema:** Se envía un mensaje tipo `CHAT_MESSAGE` con remitente `"SISTEMA"` informando sobre la salida o desconexión del usuario.
+5. **Cierre Físico:** Se cierra el canal `Socket` del cliente de forma segura.
+
+Esto garantiza que no existan fugas de memoria (hilos huérfanos que consuman recursos) ni inconsistencias visuales (como pantallas congeladas en el último fotograma) en las pantallas de los demás participantes que siguen conectados en la sala.

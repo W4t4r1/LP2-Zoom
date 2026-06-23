@@ -10,11 +10,11 @@ import model.MensajeSocket;
 import network.ClienteConexion;
 
 public class LoginFrame extends JFrame implements ClienteConexion.MensajeListener {
-    
+
     private JTextField txtUsuario;
     private JPasswordField txtPassword;
     private JButton btnIngresar;
-    
+
     // Variables de red
     private Gson gson;
 
@@ -23,7 +23,7 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
         setTitle("Zoom Sockets - Iniciar Sesión");
         setSize(380, 480);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setLocationRelativeTo(null); 
+        setLocationRelativeTo(null);
         setResizable(false); // Evitamos que se deforme el diseño
 
         gson = new Gson();
@@ -92,6 +92,7 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
             public void mouseEntered(java.awt.event.MouseEvent evt) {
                 btnIngresar.setBackground(new Color(52, 152, 219)); // Azul más claro
             }
+
             public void mouseExited(java.awt.event.MouseEvent evt) {
                 btnIngresar.setBackground(new Color(41, 128, 185)); // Regresa al original
             }
@@ -102,17 +103,17 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
         mainPanel.add(Box.createRigidArea(new Dimension(0, 10)));
         mainPanel.add(lblSubtitulo);
         mainPanel.add(Box.createRigidArea(new Dimension(0, 40)));
-        
+
         mainPanel.add(pnlUsrLabel);
         mainPanel.add(Box.createRigidArea(new Dimension(0, 5)));
         mainPanel.add(txtUsuario);
         mainPanel.add(Box.createRigidArea(new Dimension(0, 20)));
-        
+
         mainPanel.add(pnlPassLabel);
         mainPanel.add(Box.createRigidArea(new Dimension(0, 5)));
         mainPanel.add(txtPassword);
         mainPanel.add(Box.createRigidArea(new Dimension(0, 40)));
-        
+
         mainPanel.add(btnIngresar);
 
         add(mainPanel);
@@ -136,10 +137,10 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
             boolean exito = ClienteConexion.getInstancia().conectar("localhost", 5000);
             if (!exito) {
                 SwingUtilities.invokeLater(() -> {
-                    JOptionPane.showMessageDialog(this, 
-                        "No se pudo conectar al servidor. Enciéndalo primero.", 
-                        "Error de Conexión", 
-                        JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(this,
+                            "No se pudo conectar al servidor. Enciéndalo primero.",
+                            "Error de Conexión",
+                            JOptionPane.ERROR_MESSAGE);
                 });
             }
         }).start();
@@ -150,12 +151,14 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
         String password = new String(txtPassword.getPassword()).trim();
 
         if (usuario.isEmpty() || password.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Por favor, complete todos los campos.", "Campos Vacíos", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Por favor, complete todos los campos.", "Campos Vacíos",
+                    JOptionPane.WARNING_MESSAGE);
             return;
         }
 
         if (!ClienteConexion.getInstancia().isConectado()) {
-            JOptionPane.showMessageDialog(this, "Sin conexión con el servidor. Reintentando...", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Sin conexión con el servidor. Reintentando...", "Error",
+                    JOptionPane.ERROR_MESSAGE);
             conectarAlServidor();
             return;
         }
@@ -182,22 +185,22 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
             SwingUtilities.invokeLater(() -> {
                 btnIngresar.setEnabled(true);
                 btnIngresar.setText("Ingresar a la Sala");
-                
+
                 if ("SUCCESS".equalsIgnoreCase(mensaje.getMessage())) {
-                    JOptionPane.showMessageDialog(this, 
-                        "¡Inicio de sesión exitoso! Bienvenido " + mensaje.getUserName(), 
-                        "Acceso Permitido", 
-                        JOptionPane.INFORMATION_MESSAGE);
-                    
+                    JOptionPane.showMessageDialog(this,
+                            "¡Inicio de sesión exitoso! Bienvenido " + mensaje.getUserName(),
+                            "Acceso Permitido",
+                            JOptionPane.INFORMATION_MESSAGE);
+
                     // Abrir la sala principal pasando el ID y Nombre del usuario
                     RoomFrame roomFrame = new RoomFrame(mensaje.getUserId(), mensaje.getUserName());
                     roomFrame.setVisible(true);
                     this.dispose();
                 } else {
-                    JOptionPane.showMessageDialog(this, 
-                        "Error: " + mensaje.getMessage(), 
-                        "Acceso Denegado", 
-                        JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(this,
+                            "Error: " + mensaje.getMessage(),
+                            "Acceso Denegado",
+                            JOptionPane.ERROR_MESSAGE);
                 }
             });
         }
@@ -208,10 +211,10 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
         SwingUtilities.invokeLater(() -> {
             btnIngresar.setEnabled(true);
             btnIngresar.setText("Ingresar a la Sala");
-            JOptionPane.showMessageDialog(this, 
-                "Se ha perdido la conexión con el servidor.", 
-                "Desconectado", 
-                JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this,
+                    "Se ha perdido la conexión con el servidor.",
+                    "Desconectado",
+                    JOptionPane.WARNING_MESSAGE);
         });
     }
 

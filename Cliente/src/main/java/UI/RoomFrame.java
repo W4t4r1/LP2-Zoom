@@ -61,6 +61,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     private boolean camaraActiva = true;
     private java.util.Map<Integer, JLabel> videoFeeds = new ConcurrentHashMap<>();
     private java.util.Map<Integer, JPanel> videoFeedPanels = new ConcurrentHashMap<>();
+    private final java.util.Map<Integer, String> activeCameraStates = new ConcurrentHashMap<>();
     private CameraCapture cameraCapture;
     private CameraSimulator cameraSimulator;
     private boolean usingCameraCapture = false;
@@ -544,6 +545,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         lblTituloReunion.setText("Sala de Reunión Activa: Código " + roomCode);
         txtAreaChat.setText(""); // Limpiar chat previo para evitar duplicados
         cardLayout.show(mainContainer, "REUNION");
+        activeCameraStates.clear(); // Limpiar estados de cámara anteriores
 
         // Enviar solicitud de historial de chat al servidor
         MensajeSocket requestMsg = new MensajeSocket();
@@ -827,11 +829,19 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         String estado = mensaje.getMessage();
         if (senderId == null || estado == null) return;
 
+        activeCameraStates.put(senderId, estado);
+
         SwingUtilities.invokeLater(() -> updateVideoState(senderId, senderName, estado));
     }
 
     private void updateVideoFeed(Integer senderId, String senderName, BufferedImage img) {
         if (senderId == null) return;
+
+        // Si el estado de la cámara del remitente es OFF, ignorar el frame para evitar condiciones de carrera
+        String estado = activeCameraStates.get(senderId);
+        if ("OFF".equalsIgnoreCase(estado)) {
+            return;
+        }
 
         JLabel lbl = getOrCreateFeedLabel(senderId, senderName);
         if (lbl == null) return;
@@ -1160,21 +1170,73 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     }
 
     private void startCameraSource() {
-        if (cameraCapture == null) {
-            cameraCapture = new CameraCapture(userId, userName, roomCode);
-        }
+        btnToggleCamera.setEnabled(false);
+        
+        new Thread(() -> {
+            // Verificar si el usuario apagó la cámara antes de empezar
+            if (!camaraActiva || roomCode == null) {
+                SwingUtilities.invokeLater(() -> btnToggleCamera.setEnabled(true));
+                return;
+            }
 
-        if (cameraCapture.start()) {
-            usingCameraCapture = true;
-            return;
-        }
+            // Crear referencia local de CameraCapture para evitar problemas de concurrencia
+            CameraCapture capture = new CameraCapture(userId, userName, roomCode);
+            cameraCapture = capture;
 
-        // Si no se encuentra cámara física, usar simulador de respaldo.
-        usingCameraCapture = false;
-        if (cameraSimulator == null) {
-            cameraSimulator = new CameraSimulator(userId, userName, roomCode);
-        }
-        cameraSimulator.start();
+            boolean started = capture.start();
+            
+            // Verificar si la cámara fue apagada o se abandonó la sala mientras se inicializaba
+            if (!camaraActiva || roomCode == null) {
+                capture.stop();
+                if (cameraCapture == capture) {
+                    cameraCapture = null;
+                }
+                SwingUtilities.invokeLater(() -> btnToggleCamera.setEnabled(true));
+                return;
+            }
+
+            if (started) {
+                usingCameraCapture = true;
+                SwingUtilities.invokeLater(() -> {
+                    btnToggleCamera.setEnabled(true);
+                });
+                return;
+            }
+
+            // Si falla la cámara física, limpiar referencia y usar simulador
+            capture.stop();
+            if (cameraCapture == capture) {
+                cameraCapture = null;
+            }
+            
+            System.out.println("[-] No se pudo inicializar la cámara física. Usando simulador...");
+            usingCameraCapture = false;
+            
+            // Verificar nuevamente antes de encender el simulador
+            if (!camaraActiva || roomCode == null) {
+                SwingUtilities.invokeLater(() -> btnToggleCamera.setEnabled(true));
+                return;
+            }
+
+            if (cameraSimulator == null) {
+                cameraSimulator = new CameraSimulator(userId, userName, roomCode);
+            }
+            cameraSimulator.start();
+
+            SwingUtilities.invokeLater(() -> {
+                btnToggleCamera.setEnabled(true);
+                JOptionPane.showMessageDialog(
+                    RoomFrame.this,
+                    "No se pudo acceder a la cámara física.\n" +
+                    "Asegúrate de que no esté en uso por otra aplicación y de que los permisos de cámara\n" +
+                    "estén habilitados en la configuración de privacidad de Windows:\n" +
+                    "Configuración -> Privacidad y seguridad -> Cámara (permitir que las aplicaciones de escritorio accedan).\n\n" +
+                    "Se activará la cámara de simulación académica.",
+                    "Advertencia de Cámara",
+                    JOptionPane.WARNING_MESSAGE
+                );
+            });
+        }, "CameraInitializerThread").start();
     }
 
     private void stopCameraSource() {

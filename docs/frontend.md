@@ -108,19 +108,20 @@ sequenceDiagram
 3.  **INVITADO (Pantalla de Espera):** Pantalla de bloqueo para el invitado con una barra de progreso indeterminada. Los controles están bloqueados hasta recibir la trama `ADMIT_USER` con el mensaje `ACCEPTED`, tras lo cual el invitado pasa a un estado de espera admitido (`INVITADO_ADMITIDO`). Solo después de recibir la trama `MEETING_STARTED` el invitado se redirige a la pantalla `REUNION`. Si recibe `REJECTED`, regresa a la pantalla `SELECTOR`.
 4.  **REUNION (Videoconferencia Activa):** Interfaz unificada de chat de texto, visor de grid de video y gestor de carga/descarga de archivos compartidos.
 
-## 4.1 Transmisión de cámara simulada
+## 4.1 Transmisión de cámara física y simulada
 
-Se añadió soporte a nivel de cliente para enviar y recibir tramas `CAMERA_FRAME` usando un simulador local en lugar de una webcam real. El `RoomFrame` ahora contiene un `pnlVideoGrid` basado en `GridLayout` que renderiza imágenes JPEG codificadas en Base64 recibidas desde el servidor.
+Se añadió soporte a nivel de cliente para enviar y recibir tramas `CAMERA_FRAME` utilizando tanto la webcam física del equipo como un simulador local de respaldo si no hay cámara disponible o faltan permisos.
 
-* El cliente crea un `CameraSimulator` al entrar a la reunión y lo detiene al abandonar la sala.
-* El simulador genera imágenes de 320x240 con animación simple, las comprime a JPG y las codifica a Base64.
-* Cada `CAMERA_FRAME` se transmite como mensaje JSON al servidor y se retransmite a los demás participantes de la sala.
-* El frontend decodifica las tramas recibidas, crea `ImageIcon`s y actualiza dinámicamente los widgets del grid de video.
-* El panel de video ya no muestra un placeholder de fase anterior; el área se centra usando un contenedor `FlowLayout` y solo muestra los feeds activos.
-* Se añadió un botón `Cámara: ON/OFF` en el encabezado de `RoomFrame` para activar o desactivar la transmisión de frames del simulador.
-* Se agregó la trama `CAMERA_STATE` para que el servidor notifique a los demás participantes cuando la cámara se apaga o enciende.
-* Cuando un cliente recibe `CAMERA_STATE = OFF`, se muestra un panel negro centrado con el texto "Cámara apagada" y el nombre del usuario.
-* Al apagar la cámara, el simulador se detiene y no se envían más `CAMERA_FRAME`. Al volver a encenderla, la simulación se reinicia automáticamente.
+### A. Mecanismo de Inicialización de Cámara Física
+Para evitar congelamientos de la interfaz gráfica y ofrecer robustez en entornos Windows:
+* **Hilos de Fondo:** La webcam se inicializa asíncronamente en un hilo secundario independiente (`CameraInitializerThread`). Mientras tanto, el botón `Cámara: ON/OFF` se deshabilita temporalmente en el EDT para evitar inicializaciones concurrentes o múltiples clics.
+* **Apertura Síncrona Controlada:** Se utiliza `webcam.open()` de forma síncrona en el hilo secundario para comprobar de forma real y precisa si el hardware responde, en vez de delegar asíncronamente a ciegas.
+* **Límite de Espera (Timeout):** Se configura `Webcam.getDefault(3000)` con un límite de 3 segundos para prevenir bloqueos permanentes si el driver de Windows DirectShow no responde.
+* **Detección de Permisos en Windows:** Windows bloquea el acceso de cámara silenciosamente para aplicaciones Java si la privacidad del sistema está desactivada. En caso de fallo o denegación, la aplicación lo detecta, inicia automáticamente el simulador (`CameraSimulator`) para no romper el flujo visual, y despliega un cuadro de diálogo informativo (`JOptionPane.showMessageDialog`) recomendando al usuario permitir el acceso a aplicaciones de escritorio en la configuración de Windows.
 
-Esto permite probar el flujo de video y controlar la transmisión directamente desde la UI de la reunión.
+### B. Mitigación de Fotogramas Congelados por Condición de Carrera
+Al apagar la cámara, algunos fotogramas tardíos (`CAMERA_FRAME`) pueden llegar a los demás participantes después de la trama de estado `CAMERA_STATE = OFF`, provocando que el video de este usuario quede permanentemente congelado. Para evitar esto:
+* **Registro de Estados Local:** Cada cliente mantiene un mapa concurrente `activeCameraStates` que registra el estado más reciente de la cámara de los demás integrantes de la sala.
+* **Filtrado de Fotogramas:** En `updateVideoFeed()`, antes de pintar cualquier fotograma de un usuario, se verifica su estado en `activeCameraStates`. Si el estado registrado es `"OFF"`, el fotograma se descarta de forma inmediata, garantizando que el visor muestre permanentemente la leyenda "Cámara apagada" y el fondo negro.
+* **Limpieza de Estados:** Al ingresar a una nueva reunión, se limpia el mapa de estados mediante `activeCameraStates.clear()`.
 

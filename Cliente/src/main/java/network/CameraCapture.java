@@ -32,18 +32,25 @@ public class CameraCapture {
         this.roomCode = roomCode;
     }
 
-    public boolean start() {
+    public synchronized boolean start() {
         if (executor != null && !executor.isShutdown()) return true;
 
         try {
-            webcam = Webcam.getDefault();
+            // timeout de 3000ms para evitar cuelgues indefinidos en DirectShow
+            webcam = Webcam.getDefault(3000);
             if (webcam == null) {
                 System.err.println("[-] No se encontró ninguna webcam física.");
                 return false;
             }
 
             webcam.setViewSize(new java.awt.Dimension(width, height));
-            webcam.open(true);
+            
+            // Abrir de forma síncrona para verificar si realmente se pudo inicializar la cámara
+            boolean opened = webcam.open();
+            if (!opened) {
+                System.err.println("[-] No se pudo abrir la webcam física (open() retornó false).");
+                return false;
+            }
 
             executor = Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "CameraCapture-" + userId);
@@ -61,7 +68,7 @@ public class CameraCapture {
         }
     }
 
-    public void stop() {
+    public synchronized void stop() {
         if (executor != null) {
             executor.shutdownNow();
             executor = null;
@@ -77,9 +84,10 @@ public class CameraCapture {
 
     private void tick() {
         try {
-            if (webcam == null || !webcam.isOpen()) return;
+            Webcam tempWebcam = this.webcam;
+            if (tempWebcam == null || !tempWebcam.isOpen()) return;
 
-            BufferedImage img = webcam.getImage();
+            BufferedImage img = tempWebcam.getImage();
             if (img == null) return;
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream();

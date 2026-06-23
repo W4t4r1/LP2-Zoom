@@ -357,6 +357,15 @@ public class ManejadorCliente implements Runnable {
 
         System.out.println("[-] Usuario " + this.userName + " sale de la sala " + this.roomCode);
         
+        // Notificar estado de cámara OFF a los demás antes de salir
+        MensajeSocket camOffMsg = new MensajeSocket();
+        camOffMsg.setType("CAMERA_STATE");
+        camOffMsg.setRoomCode(this.roomCode);
+        camOffMsg.setUserId(this.userId);
+        camOffMsg.setUserName(this.userName);
+        camOffMsg.setMessage("OFF");
+        MainServidor.retransmitirMensaje(camOffMsg, this.userId);
+
         // Remover de la base de datos de participantes activos
         DBService.actualizarEstadoSolicitud(this.roomCode, this.userId, "RECHAZADO");
         
@@ -474,6 +483,15 @@ public class ManejadorCliente implements Runnable {
                 
                 // Si estaba en una sala, notificar
                 if (this.roomCode != null) {
+                    // Notificar estado de cámara OFF a los demás por desconexión abrupta
+                    MensajeSocket camOffMsg = new MensajeSocket();
+                    camOffMsg.setType("CAMERA_STATE");
+                    camOffMsg.setRoomCode(this.roomCode);
+                    camOffMsg.setUserId(this.userId);
+                    camOffMsg.setUserName(this.userName);
+                    camOffMsg.setMessage("OFF");
+                    MainServidor.retransmitirMensaje(camOffMsg, this.userId);
+
                     DBService.actualizarEstadoSolicitud(this.roomCode, this.userId, "RECHAZADO");
                     MensajeSocket alerta = new MensajeSocket("CHAT_MESSAGE", this.roomCode, 0, "SISTEMA", this.userName + " se ha desconectado.", null);
                     MainServidor.retransmitirMensaje(alerta, null);
