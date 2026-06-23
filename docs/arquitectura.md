@@ -77,23 +77,23 @@ Para estructurar la arquitectura del sistema de manera robusta, extensible y man
 ### A. Patrón Strategy (Estrategia)
 Se utiliza para encapsular las diferentes formas de capturar y generar el flujo de video en la clase `RoomFrame`.
 - **Estructura:**
-  - [CameraStrategy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/CameraStrategy.java) (Interfaz): Define el contrato común (`start()`, `stop()`, `isActive()`).
-  - [PhysicalCameraStrategy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/PhysicalCameraStrategy.java) (Estrategia Concreta): Utiliza la webcam física del computador.
-  - [SimulatedCameraStrategy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/SimulatedCameraStrategy.java) (Estrategia Concreta): Dibuja formas dinámicas de prueba.
+  - [CameraStrategy](../Cliente/src/main/java/network/camera/CameraStrategy.java) (Interfaz): Define el contrato común (`start()`, `stop()`, `isActive()`).
+  - [PhysicalCameraStrategy](../Cliente/src/main/java/network/camera/PhysicalCameraStrategy.java) (Estrategia Concreta): Utiliza la webcam física del computador.
+  - [SimulatedCameraStrategy](../Cliente/src/main/java/network/camera/SimulatedCameraStrategy.java) (Estrategia Concreta): Dibuja formas dinámicas de prueba.
 - **Beneficio:** Permite alternar entre cámara física y simulador de forma intercambiable sin acoplar la UI a la tecnología de captura de video física.
 
 ### B. Patrón Factory Method (Método de Fábrica)
 Se encarga de delegar la creación física de las estrategias de cámara a creadores dedicados.
 - **Estructura:**
-  - [CameraCreator](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/CameraCreator.java) (Creador Abstracto): Declara el método de fábrica `createCamera()`.
-  - [PhysicalCameraCreator](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/PhysicalCameraCreator.java) (Creador Concreto): Produce objetos del tipo `PhysicalCameraStrategy`.
-  - [SimulatedCameraCreator](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/SimulatedCameraCreator.java) (Creador Concreto): Produce objetos del tipo `SimulatedCameraStrategy`.
+  - [CameraCreator](../Cliente/src/main/java/network/camera/CameraCreator.java) (Creador Abstracto): Declara el método de fábrica `createCamera()`.
+  - [PhysicalCameraCreator](../Cliente/src/main/java/network/camera/PhysicalCameraCreator.java) (Creador Concreto): Produce objetos del tipo `PhysicalCameraStrategy`.
+  - [SimulatedCameraCreator](../Cliente/src/main/java/network/camera/SimulatedCameraCreator.java) (Creador Concreto): Produce objetos del tipo `SimulatedCameraStrategy`.
 - **Beneficio:** Desacopla la lógica de instanciación de las estrategias en `RoomFrame`, promoviendo el principio de inversión de dependencia.
 
 ### C. Patrón Proxy (Intermediario)
 Actúa como un representante/intermediario de la cámara, interceptando las operaciones y añadiendo comportamiento inteligente.
 - **Estructura:**
-  - [CameraProxy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/CameraProxy.java) (Implementa `CameraStrategy`): Envuelve al sujeto real (`PhysicalCameraStrategy` o `SimulatedCameraStrategy`).
+  - [CameraProxy](../Cliente/src/main/java/network/camera/CameraProxy.java) (Implementa `CameraStrategy`): Envuelve al sujeto real (`PhysicalCameraStrategy` o `SimulatedCameraStrategy`).
   - **Funciones del Proxy:**
     1. **Protection Proxy (Control de Acceso):** Valida si la variable estática `permissionGranted` es verdadera antes de inicializar o encender la cámara.
     2. **Virtual Proxy (Inicialización Perezosa):** Retarda la instanciación del dispositivo de video hasta que la UI invoque explícitamente `start()`.

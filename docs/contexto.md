@@ -40,7 +40,7 @@ El sistema ha sido estructurado utilizando tecnologías nativas de Java para la 
 
 ## 4. Protocolo de Mensajes JSON
 
-La comunicación bidireccional cliente-servidor se basa en objetos JSON serializados mediante la clase [MensajeSocket](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Cliente/src/main/java/model/MensajeSocket.java). La clave para el enrutamiento es el campo `type`.
+La comunicación bidireccional cliente-servidor se basa en objetos JSON serializados mediante la clase [MensajeSocket](../Cliente/src/main/java/model/MensajeSocket.java). La clave para el enrutamiento es el campo `type`.
 
 ### Estructura base del mensaje JSON
 
@@ -76,7 +76,7 @@ La comunicación bidireccional cliente-servidor se basa en objetos JSON serializ
 
 ## 5. Estructura de la Base de Datos
 
-Las tablas definidas en Supabase PostgreSQL (especificadas en el archivo [schema.sql](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/db/schema.sql)) son las siguientes:
+Las tablas definidas en Supabase PostgreSQL (especificadas en el archivo [schema.sql](../db/schema.sql)) son las siguientes:
 
 ```mermaid
 erDiagram
@@ -152,14 +152,14 @@ erDiagram
 3. Envía el manejador al pool de hilos dinámico `CachedThreadPool`. Esto libera el hilo principal para seguir aceptando nuevas conexiones.
 4. El `ManejadorCliente` lee continuamente del stream de entrada (`BufferedReader.readLine()`). Cuando recibe un JSON válido:
    * Lo deserializa a `MensajeSocket`.
-   * Evalúa el tipo de mensaje y ejecuta la consulta correspondiente en la clase estática de base de datos [DBService](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Servidor/src/main/java/database/DBService.java).
+   * Evalúa el tipo de mensaje y ejecuta la consulta correspondiente en la clase estática de base de datos [DBService](../Servidor/src/main/java/database/DBService.java).
    * Si requiere distribución, llama al método auxiliar `retransmitirMensaje`, filtrando las conexiones registradas en el mapa concurrente `clientesActivos` por el código de sala asignado.
 
 ### Cliente (ClienteConexion)
 
 1. Implementa el patrón **Singleton** para centralizar la conexión física TCP.
 2. Posee un hilo de escucha dedicado (`escucharServidor`) que lee en segundo plano el flujo de entrada, evitando congelar la interfaz gráfica de Swing (Event Dispatch Thread).
-3. Permite la suscripción de múltiples controladores u oyentes gráficos mediante la interfaz [MensajeListener](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Cliente/src/main/java/network/ClienteConexion.java#L22-L25). Al recibir un mensaje del servidor, este se propaga a los observadores activos.
+3. Permite la suscripción de múltiples controladores u oyentes gráficos mediante la interfaz [MensajeListener](../Cliente/src/main/java/network/ClienteConexion.java#L22-L25). Al recibir un mensaje del servidor, este se propaga a los observadores activos.
 
 ---
 

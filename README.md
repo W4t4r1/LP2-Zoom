@@ -18,15 +18,15 @@ El propósito del proyecto es ejemplificar de forma conceptual y práctica la pr
 
 ## Índice de Documentación Técnica
 
-Para conocer a fondo el diseño, el contrato de datos o la configuración del entorno, consulta las guías detalladas en la carpeta [docs/](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/docs):
+Para conocer a fondo el diseño, el contrato de datos o la configuración del entorno, consulta las guías detalladas en la carpeta [docs/](docs/):
 
-*   **[Arquitectura General](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/docs/arquitectura.md):** Visión global del flujo de transacciones, componentes (Cliente, Servidor, DB) y estrategias ante la latencia y fallas de hilos.
-*   **[Especificación del Backend](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/docs/backend.md):** Detalles sobre el manejo de concurrencia (`CachedThreadPool`), enrutamiento por tipo de trama y ciclo de vida de los sockets.
-*   **[Especificación del Frontend](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/docs/frontend.md):** Manejo de hilos gráficos en Swing (EDT) en paralelo al Hilo de Escucha de Red secundario y control de pantallas (`CardLayout`).
-*   **[Diseño de Base de Datos](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/docs/base-de-datos.md):** Estructura del esquema PostgreSQL en Supabase, diagrama entidad-relación y scripts de migración (DDL) con semillas de prueba.
-*   **[Contrato de Mensajería JSON](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/docs/endpoints.md):** Formato y ejemplos exactos de los payloads JSON utilizados sobre los sockets TCP para cada caso de negocio.
-*   **[Guía de Despliegue y Maven](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/docs/despliegue.md):** Configuración de variables, driver JDBC con SSL y comandos Maven para construir y ejecutar los archivos JAR.
-*   **[Control de Fases del Proyecto](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/docs/fases.md):** Mapa de ruta de desarrollo de las 6 fases funcionales del prototipo y porcentaje de avance.
+*   **[Arquitectura General](docs/arquitectura.md):** Visión global del flujo de transacciones, componentes (Cliente, Servidor, DB) y estrategias ante la latencia y fallas de hilos.
+*   **[Especificación del Backend](docs/backend.md):** Detalles sobre el manejo de concurrencia (`CachedThreadPool`), enrutamiento por tipo de trama y ciclo de vida de los sockets.
+*   **[Especificación del Frontend](docs/frontend.md):** Manejo de hilos gráficos en Swing (EDT) en paralelo al Hilo de Escucha de Red secundario y control de pantallas (`CardLayout`).
+*   **[Diseño de Base de Datos](docs/base-de-datos.md):** Estructura del esquema PostgreSQL en Supabase, diagrama entidad-relación y scripts de migración (DDL) con semillas de prueba.
+*   **[Contrato de Mensajería JSON](docs/endpoints.md):** Formato y ejemplos exactos de los payloads JSON utilizados sobre los sockets TCP para cada caso de negocio.
+*   **[Guía de Despliegue y Maven](docs/despliegue.md):** Configuración de variables, driver JDBC con SSL y comandos Maven para construir y ejecutar los archivos JAR.
+*   **[Control de Fases del Proyecto](docs/fases.md):** Mapa de ruta de desarrollo de las 6 fases funcionales del prototipo y porcentaje de avance.
 
 ---
 

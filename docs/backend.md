@@ -36,7 +36,7 @@ Servidor/src/main/java/
 ## 3. Módulos y Lógica Principal
 
 ### A. Servidor Escucha (MainServidor)
-El archivo [MainServidor](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Servidor/src/main/java/network/MainServidor.java) corre un bucle continuo de aceptación de sockets.
+El archivo [MainServidor](../Servidor/src/main/java/network/MainServidor.java) corre un bucle continuo de aceptación de sockets.
 
 ```java
 // Hilo principal que ejecuta el bucle de escucha del ServerSocket

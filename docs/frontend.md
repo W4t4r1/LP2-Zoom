@@ -27,7 +27,7 @@ graph TD
 Es el hilo principal y exclusivo de Swing encargado de pintar la pantalla, escuchar los clics de botones y capturar el teclado. **Regla de oro de Swing:** Ninguna tarea de larga duración o de red debe correr en este hilo, de lo contrario la ventana mostrará el mensaje "(No Responde)" y se congelará.
 
 ### B. Hilo de Escucha de Red (HiloEscuchaCliente)
-Al iniciar la conexión física en [ClienteConexion](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Cliente/src/main/java/network/ClienteConexion.java), se instancia y arranca un hilo secundario encargado exclusivamente de bloquearse en espera de datos entrantes:
+Al iniciar la conexión física en [ClienteConexion](../Cliente/src/main/java/network/ClienteConexion.java), se instancia y arranca un hilo secundario encargado exclusivamente de bloquearse en espera de datos entrantes:
 
 ```java
 // Hilo de escucha en segundo plano para evitar colgar la interfaz gráfica (EDT)
@@ -70,7 +70,7 @@ public void onMensajeRecibido(MensajeSocket mensaje) {
 
 ## 3. Control de Estados Visuales de la Interfaz
 
-La ventana principal de la reunión [RoomFrame](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Cliente/src/main/java/UI/RoomFrame.java) utiliza un contenedor principal configurado con un **CardLayout** para controlar los cuatro estados y pantallas que atraviesa el flujo del usuario:
+La ventana principal de la reunión [RoomFrame](../Cliente/src/main/java/UI/RoomFrame.java) utiliza un contenedor principal configurado con un **CardLayout** para controlar los cuatro estados y pantallas que atraviesa el flujo del usuario:
 
 ### Máquina de Estados del CardLayout
 
@@ -110,20 +110,20 @@ sequenceDiagram
 
 ## 4.1 Transmisión de cámara: Arquitectura basada en Patrones de Diseño
 
-La captura y transmisión de frames de cámara (`CAMERA_FRAME`) y estados (`CAMERA_STATE`) en [RoomFrame](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/UI/RoomFrame.java) está desacoplada y estructurada mediante tres patrones de diseño fundamentales para mejorar la mantenibilidad, robustez y legibilidad:
+La captura y transmisión de frames de cámara (`CAMERA_FRAME`) y estados (`CAMERA_STATE`) en [RoomFrame](../Cliente/src/main/java/UI/RoomFrame.java) está desacoplada y estructurada mediante tres patrones de diseño fundamentales para mejorar la mantenibilidad, robustez y legibilidad:
 
 ### A. Patrón Strategy (Estrategia)
-Toda fuente de video implementa la interfaz común [CameraStrategy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/CameraStrategy.java), la cual cuenta con los métodos `start()`, `stop()` y `isActive()`.
-- **[PhysicalCameraStrategy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/PhysicalCameraStrategy.java):** Encapsula el acceso y captura de la webcam física usando la librería `webcam-capture`. Para evitar bloqueos, implementa un timeout síncrono controlado en `Webcam.getDefault(3000)`.
-- **[SimulatedCameraStrategy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/SimulatedCameraStrategy.java):** Genera gráficos degradados interactivos con un círculo en movimiento y marcas de tiempo como fallback académico.
+Toda fuente de video implementa la interfaz común [CameraStrategy](../Cliente/src/main/java/network/camera/CameraStrategy.java), la cual cuenta con los métodos `start()`, `stop()` y `isActive()`.
+- **[PhysicalCameraStrategy](../Cliente/src/main/java/network/camera/PhysicalCameraStrategy.java):** Encapsula el acceso y captura de la webcam física usando la librería `webcam-capture`. Para evitar bloqueos, implementa un timeout síncrono controlado en `Webcam.getDefault(3000)`.
+- **[SimulatedCameraStrategy](../Cliente/src/main/java/network/camera/SimulatedCameraStrategy.java):** Genera gráficos degradados interactivos con un círculo en movimiento y marcas de tiempo como fallback académico.
 
 ### B. Patrón Factory Method (Método de Fábrica)
-La instanciación de las estrategias se delega a una jerarquía de creadores que heredan de [CameraCreator](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/CameraCreator.java):
-- **[PhysicalCameraCreator](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/PhysicalCameraCreator.java):** Retorna un `PhysicalCameraStrategy`.
-- **[SimulatedCameraCreator](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/SimulatedCameraCreator.java):** Retorna un `SimulatedCameraStrategy`.
+La instanciación de las estrategias se delega a una jerarquía de creadores que heredan de [CameraCreator](../Cliente/src/main/java/network/camera/CameraCreator.java):
+- **[PhysicalCameraCreator](../Cliente/src/main/java/network/camera/PhysicalCameraCreator.java):** Retorna un `PhysicalCameraStrategy`.
+- **[SimulatedCameraCreator](../Cliente/src/main/java/network/camera/SimulatedCameraCreator.java):** Retorna un `SimulatedCameraStrategy`.
 
 ### C. Patrón Proxy (Intermediario)
-La clase `RoomFrame` nunca interactúa directamente con los creadores o las estrategias concretas. En su lugar, utiliza el intermediario inteligente [CameraProxy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/CameraProxy.java):
+La clase `RoomFrame` nunca interactúa directamente con los creadores o las estrategias concretas. En su lugar, utiliza el intermediario inteligente [CameraProxy](../Cliente/src/main/java/network/camera/CameraProxy.java):
 - **Virtual Proxy (Carga Perezosa):** Retarda la instanciación de la cámara real hasta que se llama al método `start()`.
 - **Protection Proxy (Control de Acceso):** Intercepta el inicio de la cámara y valida si el flag `permissionGranted` está habilitado. Si es falso, bloquea el inicio y retorna `false` inmediatamente.
 - **Logging Proxy (Registro):** Añade trazas y logs en consola al iniciar o detener el flujo.

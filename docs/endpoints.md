@@ -4,7 +4,7 @@ Este documento especifica el formato exacto de las tramas de datos JSON transmit
 
 ## 1. Estructura Estándar de la Trama JSON
 
-Todos los mensajes que circulan por los sockets se mapean a la clase [MensajeSocket](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Cliente/src/main/java/model/MensajeSocket.java) y deben representarse como una única línea de texto finalizada con un carácter de salto de línea `\n`.
+Todos los mensajes que circulan por los sockets se mapean a la clase [MensajeSocket](../Cliente/src/main/java/model/MensajeSocket.java) y deben representarse como una única línea de texto finalizada con un carácter de salto de línea `\n`.
 
 ### Campos del Objeto JSON
 
