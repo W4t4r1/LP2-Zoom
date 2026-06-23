@@ -67,3 +67,93 @@ sequenceDiagram
 *   **Pérdida de Conexión y Desconexiones Abruptas:** Al operar sobre sockets TCP nativos, una desconexión abrupta (caída de internet) puede dejar hilos bloqueados en el servidor en modo de lectura. Se mitiga mediante bloques `try-catch` en el bucle continuo del método `run()` de `ManejadorCliente` que detectan fallas físicas y disparan el método de limpieza `desconectar()`.
 *   **Latencia en Transmisión de Cámara (FPS Drop):** La codificación y decodificación de tramas Base64 a tasas altas de frames (FPS) saturan el procesador y aumentan la latencia de la red. Se mitiga configurando la captura de cámara a tasas reducidas (3 a 10 FPS) y comprimiendo las fotos a formato JPG de baja resolución (ej. 320x240).
 *   **Saturación y Bloqueo de Hilos (Thread Exhaustion):** Si se manejara la creación manual de hilos (`new Thread`), el servidor podría colapsar ante cientos de conexiones. Se implementa un pool de hilos dinámico (`Executors.newCachedThreadPool()`) en el `MainServidor` que reutiliza hilos inactivos y limita el desbordamiento de recursos del sistema operativo.
+
+---
+
+## 5. Patrones de Diseño Aplicados
+
+Para estructurar la arquitectura del sistema de manera robusta, extensible y mantenible, se han implementado los siguientes patrones de diseño de software en el módulo Cliente:
+
+### A. Patrón Strategy (Estrategia)
+Se utiliza para encapsular las diferentes formas de capturar y generar el flujo de video en la clase `RoomFrame`.
+- **Estructura:**
+  - [CameraStrategy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/CameraStrategy.java) (Interfaz): Define el contrato común (`start()`, `stop()`, `isActive()`).
+  - [PhysicalCameraStrategy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/PhysicalCameraStrategy.java) (Estrategia Concreta): Utiliza la webcam física del computador.
+  - [SimulatedCameraStrategy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/SimulatedCameraStrategy.java) (Estrategia Concreta): Dibuja formas dinámicas de prueba.
+- **Beneficio:** Permite alternar entre cámara física y simulador de forma intercambiable sin acoplar la UI a la tecnología de captura de video física.
+
+### B. Patrón Factory Method (Método de Fábrica)
+Se encarga de delegar la creación física de las estrategias de cámara a creadores dedicados.
+- **Estructura:**
+  - [CameraCreator](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/CameraCreator.java) (Creador Abstracto): Declara el método de fábrica `createCamera()`.
+  - [PhysicalCameraCreator](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/PhysicalCameraCreator.java) (Creador Concreto): Produce objetos del tipo `PhysicalCameraStrategy`.
+  - [SimulatedCameraCreator](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/SimulatedCameraCreator.java) (Creador Concreto): Produce objetos del tipo `SimulatedCameraStrategy`.
+- **Beneficio:** Desacopla la lógica de instanciación de las estrategias en `RoomFrame`, promoviendo el principio de inversión de dependencia.
+
+### C. Patrón Proxy (Intermediario)
+Actúa como un representante/intermediario de la cámara, interceptando las operaciones y añadiendo comportamiento inteligente.
+- **Estructura:**
+  - [CameraProxy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/CameraProxy.java) (Implementa `CameraStrategy`): Envuelve al sujeto real (`PhysicalCameraStrategy` o `SimulatedCameraStrategy`).
+  - **Funciones del Proxy:**
+    1. **Protection Proxy (Control de Acceso):** Valida si la variable estática `permissionGranted` es verdadera antes de inicializar o encender la cámara.
+    2. **Virtual Proxy (Inicialización Perezosa):** Retarda la instanciación del dispositivo de video hasta que la UI invoque explícitamente `start()`.
+    3. **Logging Proxy (Logs de Red/Dispositivo):** Registra auditoría en consola cada vez que se llama a `start()` y `stop()`.
+    4. **Fallback Inteligente:** Si el inicio de la cámara física falla, el proxy automáticamente e internamente conmuta al simulador de forma transparente para `RoomFrame`.
+
+### Diagrama de Clases (Mermaid)
+
+```mermaid
+classDiagram
+    class CameraStrategy {
+        <<interface>>
+        +start() boolean
+        +stop() void
+        +isActive() boolean
+    }
+    class PhysicalCameraStrategy {
+        -webcam Webcam
+        -executor ScheduledExecutorService
+        +start() boolean
+        +stop() void
+        +isActive() boolean
+    }
+    class SimulatedCameraStrategy {
+        -executor ScheduledExecutorService
+        +start() boolean
+        +stop() void
+        +isActive() boolean
+    }
+    class CameraProxy {
+        -userId int
+        -userName String
+        -roomCode String
+        -creator CameraCreator
+        -realSubject CameraStrategy
+        -permissionGranted boolean
+        +start() boolean
+        +stop() void
+        +isActive() boolean
+        +getRealSubject() CameraStrategy
+    }
+    class CameraCreator {
+        <<abstract>>
+        +createCamera(userId, userName, roomCode) CameraStrategy*
+    }
+    class PhysicalCameraCreator {
+        +createCamera(userId, userName, roomCode) CameraStrategy
+    }
+    class SimulatedCameraCreator {
+        +createCamera(userId, userName, roomCode) CameraStrategy
+    }
+
+    CameraStrategy <|.. PhysicalCameraStrategy
+    CameraStrategy <|.. SimulatedCameraStrategy
+    CameraStrategy <|.. CameraProxy
+    CameraProxy --> CameraStrategy : realSubject
+    CameraProxy --> CameraCreator : creator
+    CameraCreator <|-- PhysicalCameraCreator
+    CameraCreator <|-- SimulatedCameraCreator
+    PhysicalCameraCreator ..> PhysicalCameraStrategy : creates
+    SimulatedCameraCreator ..> SimulatedCameraStrategy : creates
+```
+

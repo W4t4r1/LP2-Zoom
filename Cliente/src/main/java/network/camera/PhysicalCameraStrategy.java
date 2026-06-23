@@ -1,4 +1,4 @@
-package network;
+package network.camera;
 
 import com.github.sarxos.webcam.Webcam;
 import java.awt.image.BufferedImage;
@@ -9,13 +9,12 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import javax.imageio.ImageIO;
 import model.MensajeSocket;
+import network.ClienteConexion;
 
 /**
- * Captura la webcam física usando webcam-capture y envía frames como
- * mensajes CAMERA_FRAME. Si no hay cámara disponible, el método start()
- * devolverá false para permitir un fallback al simulador.
+ * Estrategia de cámara que captura la webcam física (Concrete Strategy).
  */
-public class CameraCapture {
+public class PhysicalCameraStrategy implements CameraStrategy {
 
     private final int userId;
     private final String userName;
@@ -26,20 +25,21 @@ public class CameraCapture {
     private Webcam webcam;
     private ScheduledExecutorService executor;
 
-    public CameraCapture(int userId, String userName, String roomCode) {
+    public PhysicalCameraStrategy(int userId, String userName, String roomCode) {
         this.userId = userId;
         this.userName = userName;
         this.roomCode = roomCode;
     }
 
+    @Override
     public synchronized boolean start() {
         if (executor != null && !executor.isShutdown()) return true;
 
         try {
-            // timeout de 3000ms para evitar cuelgues indefinidos en DirectShow
+            // Timeout de 3000ms para evitar cuelgues indefinidos en DirectShow
             webcam = Webcam.getDefault(3000);
             if (webcam == null) {
-                System.err.println("[-] No se encontró ninguna webcam física.");
+                System.err.println("[-] [PhysicalCamera] No se encontró ninguna webcam física.");
                 return false;
             }
 
@@ -48,12 +48,12 @@ public class CameraCapture {
             // Abrir de forma síncrona para verificar si realmente se pudo inicializar la cámara
             boolean opened = webcam.open();
             if (!opened) {
-                System.err.println("[-] No se pudo abrir la webcam física (open() retornó false).");
+                System.err.println("[-] [PhysicalCamera] No se pudo abrir la webcam física (open() retornó false).");
                 return false;
             }
 
             executor = Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "CameraCapture-" + userId);
+                Thread t = new Thread(r, "PhysicalCameraCapture-" + userId);
                 t.setDaemon(true);
                 return t;
             });
@@ -62,12 +62,13 @@ public class CameraCapture {
             executor.scheduleAtFixedRate(this::tick, 0, period, TimeUnit.MILLISECONDS);
             return true;
         } catch (Exception e) {
-            System.err.println("[-] Error al iniciar la webcam: " + e.getMessage());
+            System.err.println("[-] [PhysicalCamera] Error al iniciar la webcam: " + e.getMessage());
             stop();
             return false;
         }
     }
 
+    @Override
     public synchronized void stop() {
         if (executor != null) {
             executor.shutdownNow();
@@ -80,6 +81,11 @@ public class CameraCapture {
             }
             webcam = null;
         }
+    }
+
+    @Override
+    public synchronized boolean isActive() {
+        return executor != null && !executor.isShutdown() && webcam != null && webcam.isOpen();
     }
 
     private void tick() {
@@ -102,7 +108,7 @@ public class CameraCapture {
             msg.setMessage(base64);
             ClienteConexion.getInstancia().enviarMensaje(msg);
         } catch (Exception e) {
-            System.err.println("[-] Error al capturar frame de webcam: " + e.getMessage());
+            System.err.println("[-] [PhysicalCamera] Error al capturar frame de webcam: " + e.getMessage());
         }
     }
 }

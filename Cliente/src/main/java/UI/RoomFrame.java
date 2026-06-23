@@ -17,8 +17,7 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import model.MensajeSocket;
 import network.ClienteConexion;
-import network.CameraCapture;
-import network.CameraSimulator;
+import network.camera.*;
 import javax.imageio.ImageIO;
 import java.io.ByteArrayInputStream;
 import java.util.concurrent.ConcurrentHashMap;
@@ -62,9 +61,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     private java.util.Map<Integer, JLabel> videoFeeds = new ConcurrentHashMap<>();
     private java.util.Map<Integer, JPanel> videoFeedPanels = new ConcurrentHashMap<>();
     private final java.util.Map<Integer, String> activeCameraStates = new ConcurrentHashMap<>();
-    private CameraCapture cameraCapture;
-    private CameraSimulator cameraSimulator;
-    private boolean usingCameraCapture = false;
+    private CameraStrategy cameraStream;
 
     private Gson gson;
     private java.util.Map<String, java.io.FileOutputStream> descargasEnProgreso = new java.util.concurrent.ConcurrentHashMap<>();
@@ -1179,75 +1176,51 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
                 return;
             }
 
-            // Crear referencia local de CameraCapture para evitar problemas de concurrencia
-            CameraCapture capture = new CameraCapture(userId, userName, roomCode);
-            cameraCapture = capture;
+            // Instanciar el proxy utilizando el creador físico inicial (Factory Method & Proxy)
+            CameraCreator physicalCreator = new PhysicalCameraCreator();
+            CameraProxy proxy = new CameraProxy(userId, userName, roomCode, physicalCreator);
+            cameraStream = proxy;
 
-            boolean started = capture.start();
+            boolean started = proxy.start();
             
             // Verificar si la cámara fue apagada o se abandonó la sala mientras se inicializaba
             if (!camaraActiva || roomCode == null) {
-                capture.stop();
-                if (cameraCapture == capture) {
-                    cameraCapture = null;
+                proxy.stop();
+                if (cameraStream == proxy) {
+                    cameraStream = null;
                 }
                 SwingUtilities.invokeLater(() -> btnToggleCamera.setEnabled(true));
                 return;
             }
 
             if (started) {
-                usingCameraCapture = true;
                 SwingUtilities.invokeLater(() -> {
                     btnToggleCamera.setEnabled(true);
+                    
+                    // Si se hizo fallback a la simulación, alertar al usuario
+                    if (proxy.getRealSubject() instanceof SimulatedCameraStrategy) {
+                        JOptionPane.showMessageDialog(
+                            RoomFrame.this,
+                            "No se pudo acceder a la cámara física.\n" +
+                            "Asegúrate de que no esté en uso por otra aplicación y de que los permisos de cámara\n" +
+                            "estén habilitados en la configuración de privacidad de Windows:\n" +
+                            "Configuración -> Privacidad y seguridad -> Cámara (permitir que las aplicaciones de escritorio accedan).\n\n" +
+                            "Se activará la cámara de simulación académica.",
+                            "Advertencia de Cámara",
+                            JOptionPane.WARNING_MESSAGE
+                        );
+                    }
                 });
-                return;
-            }
-
-            // Si falla la cámara física, limpiar referencia y usar simulador
-            capture.stop();
-            if (cameraCapture == capture) {
-                cameraCapture = null;
-            }
-            
-            System.out.println("[-] No se pudo inicializar la cámara física. Usando simulador...");
-            usingCameraCapture = false;
-            
-            // Verificar nuevamente antes de encender el simulador
-            if (!camaraActiva || roomCode == null) {
+            } else {
                 SwingUtilities.invokeLater(() -> btnToggleCamera.setEnabled(true));
-                return;
             }
-
-            if (cameraSimulator == null) {
-                cameraSimulator = new CameraSimulator(userId, userName, roomCode);
-            }
-            cameraSimulator.start();
-
-            SwingUtilities.invokeLater(() -> {
-                btnToggleCamera.setEnabled(true);
-                JOptionPane.showMessageDialog(
-                    RoomFrame.this,
-                    "No se pudo acceder a la cámara física.\n" +
-                    "Asegúrate de que no esté en uso por otra aplicación y de que los permisos de cámara\n" +
-                    "estén habilitados en la configuración de privacidad de Windows:\n" +
-                    "Configuración -> Privacidad y seguridad -> Cámara (permitir que las aplicaciones de escritorio accedan).\n\n" +
-                    "Se activará la cámara de simulación académica.",
-                    "Advertencia de Cámara",
-                    JOptionPane.WARNING_MESSAGE
-                );
-            });
         }, "CameraInitializerThread").start();
     }
 
     private void stopCameraSource() {
-        if (cameraCapture != null) {
-            cameraCapture.stop();
-            cameraCapture = null;
+        if (cameraStream != null) {
+            cameraStream.stop();
+            cameraStream = null;
         }
-        if (cameraSimulator != null) {
-            cameraSimulator.stop();
-            cameraSimulator = null;
-        }
-        usingCameraCapture = false;
     }
 }

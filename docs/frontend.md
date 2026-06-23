@@ -108,18 +108,28 @@ sequenceDiagram
 3.  **INVITADO (Pantalla de Espera):** Pantalla de bloqueo para el invitado con una barra de progreso indeterminada. Los controles están bloqueados hasta recibir la trama `ADMIT_USER` con el mensaje `ACCEPTED`, tras lo cual el invitado pasa a un estado de espera admitido (`INVITADO_ADMITIDO`). Solo después de recibir la trama `MEETING_STARTED` el invitado se redirige a la pantalla `REUNION`. Si recibe `REJECTED`, regresa a la pantalla `SELECTOR`.
 4.  **REUNION (Videoconferencia Activa):** Interfaz unificada de chat de texto, visor de grid de video y gestor de carga/descarga de archivos compartidos.
 
-## 4.1 Transmisión de cámara física y simulada
+## 4.1 Transmisión de cámara: Arquitectura basada en Patrones de Diseño
 
-Se añadió soporte a nivel de cliente para enviar y recibir tramas `CAMERA_FRAME` utilizando tanto la webcam física del equipo como un simulador local de respaldo si no hay cámara disponible o faltan permisos.
+La captura y transmisión de frames de cámara (`CAMERA_FRAME`) y estados (`CAMERA_STATE`) en [RoomFrame](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/UI/RoomFrame.java) está desacoplada y estructurada mediante tres patrones de diseño fundamentales para mejorar la mantenibilidad, robustez y legibilidad:
 
-### A. Mecanismo de Inicialización de Cámara Física
-Para evitar congelamientos de la interfaz gráfica y ofrecer robustez en entornos Windows:
-* **Hilos de Fondo:** La webcam se inicializa asíncronamente en un hilo secundario independiente (`CameraInitializerThread`). Mientras tanto, el botón `Cámara: ON/OFF` se deshabilita temporalmente en el EDT para evitar inicializaciones concurrentes o múltiples clics.
-* **Apertura Síncrona Controlada:** Se utiliza `webcam.open()` de forma síncrona en el hilo secundario para comprobar de forma real y precisa si el hardware responde, en vez de delegar asíncronamente a ciegas.
-* **Límite de Espera (Timeout):** Se configura `Webcam.getDefault(3000)` con un límite de 3 segundos para prevenir bloqueos permanentes si el driver de Windows DirectShow no responde.
-* **Detección de Permisos en Windows:** Windows bloquea el acceso de cámara silenciosamente para aplicaciones Java si la privacidad del sistema está desactivada. En caso de fallo o denegación, la aplicación lo detecta, inicia automáticamente el simulador (`CameraSimulator`) para no romper el flujo visual, y despliega un cuadro de diálogo informativo (`JOptionPane.showMessageDialog`) recomendando al usuario permitir el acceso a aplicaciones de escritorio en la configuración de Windows.
+### A. Patrón Strategy (Estrategia)
+Toda fuente de video implementa la interfaz común [CameraStrategy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/CameraStrategy.java), la cual cuenta con los métodos `start()`, `stop()` y `isActive()`.
+- **[PhysicalCameraStrategy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/PhysicalCameraStrategy.java):** Encapsula el acceso y captura de la webcam física usando la librería `webcam-capture`. Para evitar bloqueos, implementa un timeout síncrono controlado en `Webcam.getDefault(3000)`.
+- **[SimulatedCameraStrategy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/SimulatedCameraStrategy.java):** Genera gráficos degradados interactivos con un círculo en movimiento y marcas de tiempo como fallback académico.
 
-### B. Mitigación de Fotogramas Congelados por Condición de Carrera
+### B. Patrón Factory Method (Método de Fábrica)
+La instanciación de las estrategias se delega a una jerarquía de creadores que heredan de [CameraCreator](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/CameraCreator.java):
+- **[PhysicalCameraCreator](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/PhysicalCameraCreator.java):** Retorna un `PhysicalCameraStrategy`.
+- **[SimulatedCameraCreator](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/SimulatedCameraCreator.java):** Retorna un `SimulatedCameraStrategy`.
+
+### C. Patrón Proxy (Intermediario)
+La clase `RoomFrame` nunca interactúa directamente con los creadores o las estrategias concretas. En su lugar, utiliza el intermediario inteligente [CameraProxy](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/camera/CameraProxy.java):
+- **Virtual Proxy (Carga Perezosa):** Retarda la instanciación de la cámara real hasta que se llama al método `start()`.
+- **Protection Proxy (Control de Acceso):** Intercepta el inicio de la cámara y valida si el flag `permissionGranted` está habilitado. Si es falso, bloquea el inicio y retorna `false` inmediatamente.
+- **Logging Proxy (Registro):** Añade trazas y logs en consola al iniciar o detener el flujo.
+- **Fallback Automático Transparente:** Si la inicialización en `PhysicalCameraStrategy.start()` falla, el proxy captura el error, conmuta de creador a `SimulatedCameraCreator` e inicia la simulación de forma automática. `RoomFrame` permanece totalmente ajeno a esta conmutación interna y solo consulta a `proxy.getRealSubject()` al terminar para validar si debe mostrar un aviso visual al usuario.
+
+### D. Mitigación de Fotogramas Congelados por Condición de Carrera
 Al apagar la cámara, algunos fotogramas tardíos (`CAMERA_FRAME`) pueden llegar a los demás participantes después de la trama de estado `CAMERA_STATE = OFF`, provocando que el video de este usuario quede permanentemente congelado. Para evitar esto:
 * **Registro de Estados Local:** Cada cliente mantiene un mapa concurrente `activeCameraStates` que registra el estado más reciente de la cámara de los demás integrantes de la sala.
 * **Filtrado de Fotogramas:** En `updateVideoFeed()`, antes de pintar cualquier fotograma de un usuario, se verifica su estado en `activeCameraStates`. Si el estado registrado es `"OFF"`, el fotograma se descarta de forma inmediata, garantizando que el visor muestre permanentemente la leyenda "Cámara apagada" y el fondo negro.
