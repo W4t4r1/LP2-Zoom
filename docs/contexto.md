@@ -183,7 +183,11 @@ LP2-Zoom/
 │       ├── java/
 │       │   ├── database/
 │       │   │   ├── ConexionBD.java # Proveedor de conexión JDBC a Supabase
-│       │   │   ├── DBService.java # Transacciones y consultas JDBC
+│       │   │   ├── DBStrategy.java # Interfaz de estrategia para la persistencia
+│       │   │   ├── DBService.java # Estrategia concreta que ejecuta SQL en Supabase (JDBC)
+│       │   │   ├── DBCreator.java # Creador abstracto para el Factory Method
+│       │   │   ├── SupabaseDBCreator.java # Creador concreto para instanciar DBService
+│       │   │   ├── DBProxy.java # Proxy de base de datos (lazy-init y logging)
 │       │   │   └── HashUtils.java # Hasheador de contraseñas (SHA-256)
 │       │   ├── model/
 │       │   │   ├── MensajeSocket.java

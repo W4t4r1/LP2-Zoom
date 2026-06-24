@@ -72,9 +72,11 @@ sequenceDiagram
 
 ## 5. Patrones de Diseño Aplicados
 
-Para estructurar la arquitectura del sistema de manera robusta, extensible y mantenible, se han implementado los siguientes patrones de diseño de software en el módulo Cliente:
+Para estructurar la arquitectura del sistema de manera robusta, extensible y mantenible, se han implementado de forma simétrica en el **módulo Cliente (video)** y en el **módulo Servidor (base de datos)** los patrones **Strategy**, **Factory Method** y **Proxy**.
 
-### A. Patrón Strategy (Estrategia)
+### 5.1. Patrones de Diseño en el Módulo Cliente (Visor de Video)
+
+#### A. Patrón Strategy (Estrategia)
 Se utiliza para encapsular las diferentes formas de capturar y generar el flujo de video en la clase `RoomFrame`.
 - **Estructura:**
   - [CameraStrategy](../Cliente/src/main/java/network/camera/CameraStrategy.java) (Interfaz): Define el contrato común (`start()`, `stop()`, `isActive()`).
@@ -82,7 +84,7 @@ Se utiliza para encapsular las diferentes formas de capturar y generar el flujo 
   - [SimulatedCameraStrategy](../Cliente/src/main/java/network/camera/SimulatedCameraStrategy.java) (Estrategia Concreta): Dibuja formas dinámicas de prueba.
 - **Beneficio:** Permite alternar entre cámara física y simulador de forma intercambiable sin acoplar la UI a la tecnología de captura de video física.
 
-### B. Patrón Factory Method (Método de Fábrica)
+#### B. Patrón Factory Method (Método de Fábrica)
 Se encarga de delegar la creación física de las estrategias de cámara a creadores dedicados.
 - **Estructura:**
   - [CameraCreator](../Cliente/src/main/java/network/camera/CameraCreator.java) (Creador Abstracto): Declara el método de fábrica `createCamera()`.
@@ -90,7 +92,7 @@ Se encarga de delegar la creación física de las estrategias de cámara a cread
   - [SimulatedCameraCreator](../Cliente/src/main/java/network/camera/SimulatedCameraCreator.java) (Creador Concreto): Produce objetos del tipo `SimulatedCameraStrategy`.
 - **Beneficio:** Desacopla la lógica de instanciación de las estrategias en `RoomFrame`, promoviendo el principio de inversión de dependencia.
 
-### C. Patrón Proxy (Intermediario)
+#### C. Patrón Proxy (Intermediario)
 Actúa como un representante/intermediario de la cámara, interceptando las operaciones y añadiendo comportamiento inteligente.
 - **Estructura:**
   - [CameraProxy](../Cliente/src/main/java/network/camera/CameraProxy.java) (Implementa `CameraStrategy`): Envuelve al sujeto real (`PhysicalCameraStrategy` o `SimulatedCameraStrategy`).
@@ -100,7 +102,7 @@ Actúa como un representante/intermediario de la cámara, interceptando las oper
     3. **Logging Proxy (Logs de Red/Dispositivo):** Registra auditoría en consola cada vez que se llama a `start()` y `stop()`.
     4. **Fallback Inteligente:** Si el inicio de la cámara física falla, el proxy automáticamente e internamente conmuta al simulador de forma transparente para `RoomFrame`.
 
-### Diagrama de Clases (Mermaid)
+### Diagrama de Clases de Cámara (Mermaid)
 
 ```mermaid
 classDiagram
@@ -155,5 +157,77 @@ classDiagram
     CameraCreator <|-- SimulatedCameraCreator
     PhysicalCameraCreator ..> PhysicalCameraStrategy : creates
     SimulatedCameraCreator ..> SimulatedCameraStrategy : creates
+```
+
+---
+
+### 5.2. Patrones de Diseño en el Módulo Servidor (Persistencia y Base de Datos)
+
+Para aislar el acceso directo a Supabase PostgreSQL y añadir logs e inicialización diferida, se aplica la misma tríada de patrones en el backend:
+
+#### A. Patrón Strategy (Estrategia)
+Define la interfaz abstracta de operaciones de base de datos.
+- **Estructura:**
+  - [DBStrategy](../Servidor/src/main/java/database/DBStrategy.java) (Interfaz): Declara todos los métodos CRUD parametrizados (login, registro, salas, chat, archivos).
+  - [DBService](../Servidor/src/main/java/database/DBService.java) (Estrategia Concreta): Ejecuta las consultas SQL físicas sobre la base de datos Supabase en la nube usando JDBC.
+- **Beneficio:** Permite alternar la base de datos real con una base de datos local de prueba (o simulación en memoria) sin alterar el código de red de `ManejadorCliente`.
+
+#### B. Patrón Factory Method (Método de Fábrica)
+Se encarga de abstraer la instanciación física de la estrategia de base de datos.
+- **Estructura:**
+  - [DBCreator](../Servidor/src/main/java/database/DBCreator.java) (Creador Abstracto): Declara el Factory Method `createDatabase()`.
+  - [SupabaseDBCreator](../Servidor/src/main/java/database/SupabaseDBCreator.java) (Creador Concreto): Instancia y produce el objeto real `DBService`.
+
+#### C. Patrón Proxy (Intermediario)
+Actúa como un representante/intermediario de la base de datos, interceptando las llamadas de negocio en el hilo del socket.
+- **Estructura:**
+  - [DBProxy](../Servidor/src/main/java/database/DBProxy.java) (Implementa `DBStrategy`): Envuelve al sujeto real (`DBService`).
+  - **Funciones del Proxy:**
+    1. **Virtual Proxy (Inicialización Perezosa):** Retarda la instanciación del pool de conexiones JDBC hasta la primera consulta de red efectuada por un cliente.
+    2. **Logging/Auditing Proxy:** Escribe trazas en consola de cada operación CRUD en curso detallando sus parámetros clave, facilitando la auditoría de transacciones.
+
+### Diagrama de Clases de Persistencia (Mermaid)
+
+```mermaid
+classDiagram
+    class DBStrategy {
+        <<interface>>
+        +login(correo, password) Usuario
+        +registrar(nombres, correo, password, rol) boolean
+        +crearSala(codigoSala, nombre, idHost) boolean
+        +obtenerIdSalaPorCodigo(codigoSala) int
+        +obtenerHostIdPorCodigo(codigoSala) int
+        +solicitarUnirseASala(codigoSala, idUsuario) boolean
+        +actualizarEstadoSolicitud(codigoSala, idUsuario, nuevoEstado) boolean
+        +agregarParticipante(codigoSala, idUsuario) boolean
+        +obtenerSolicitudesPendientes(codigoSala) List
+        +obtenerParticipantesActivos(codigoSala) List
+        +guardarMensaje(codigoSala, idUsuario, contenido) boolean
+        +guardarArchivo(codigoSala, idUsuario, nombre, ruta) boolean
+        +obtenerHistorialMensajes(codigoSala) List
+        +obtenerArchivosCompartidos(codigoSala) List
+    }
+    class DBService {
+        +...()
+    }
+    class DBProxy {
+        -creator DBCreator
+        -realSubject DBStrategy
+        +...()
+    }
+    class DBCreator {
+        <<abstract>>
+        +createDatabase() DBStrategy*
+    }
+    class SupabaseDBCreator {
+        +createDatabase() DBStrategy
+    }
+
+    DBStrategy <|.. DBService
+    DBStrategy <|.. DBProxy
+    DBProxy --> DBStrategy : realSubject
+    DBProxy --> DBCreator : creator
+    DBCreator <|-- SupabaseDBCreator
+    SupabaseDBCreator ..> DBService : creates
 ```
 
