@@ -120,7 +120,7 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
 
         // --- LÓGICA DE RED Y EVENTOS ---
         // Registrar esta ventana como oyente de red
-        ClienteConexion.getInstancia().addListener(this);
+        ClienteConexion.getInstancia().setListener(this);
         conectarAlServidor();
 
         btnIngresar.addActionListener(new ActionListener() {

@@ -21,6 +21,8 @@ import network.camera.*;
 import javax.imageio.ImageIO;
 import java.io.ByteArrayInputStream;
 import java.util.concurrent.ConcurrentHashMap;
+import UI.memento.ChatInputMemento;
+import UI.memento.ChatHistoryCaretaker;
 
 public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener {
 
@@ -65,6 +67,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
     private Gson gson;
     private java.util.Map<String, java.io.FileOutputStream> descargasEnProgreso = new java.util.concurrent.ConcurrentHashMap<>();
+    private final ChatHistoryCaretaker chatCaretaker = new ChatHistoryCaretaker();
 
     public RoomFrame(int userId, String userName) {
         this.userId = userId;
@@ -76,8 +79,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
-        // Patrón Observer: Registrar oyente de red
-        ClienteConexion.getInstancia().addListener(this);
+        // Registrar oyente de red
+        ClienteConexion.getInstancia().setListener(this);
 
         // Desconectarse al cerrar la ventana
         addWindowListener(new WindowAdapter() {
@@ -140,8 +143,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         pnlHost.setBackground(Color.WHITE);
         pnlHost.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(new Color(220, 224, 230), 1, true),
-                new EmptyBorder(20, 20, 20, 20)
-        ));
+                new EmptyBorder(20, 20, 20, 20)));
 
         JLabel lblHostInfo = new JLabel("Iniciar como Anfitrión", JLabel.CENTER);
         lblHostInfo.setFont(new Font("Segoe UI", Font.BOLD, 16));
@@ -166,8 +168,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         pnlInvitado.setBackground(Color.WHITE);
         pnlInvitado.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(new Color(220, 224, 230), 1, true),
-                new EmptyBorder(20, 20, 20, 20)
-        ));
+                new EmptyBorder(20, 20, 20, 20)));
 
         GridBagConstraints gbcInv = new GridBagConstraints();
         gbcInv.insets = new Insets(5, 5, 5, 5);
@@ -231,7 +232,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         // Lista de Espera Central
         JPanel pnlCuerpo = new JPanel(new BorderLayout(5, 5));
         pnlCuerpo.setBackground(Color.WHITE);
-        
+
         JLabel lblEsperaTitulo = new JLabel("Invitados en la Sala de Espera:");
         lblEsperaTitulo.setFont(new Font("Segoe UI", Font.BOLD, 14));
         pnlCuerpo.add(lblEsperaTitulo, BorderLayout.NORTH);
@@ -319,7 +320,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         gbc.gridy = 0;
         panel.add(lblLogo, gbc);
 
-        lblMensajeEsperaAdmitido = new JLabel("Has sido admitido. Esperando que el anfitrión inicie la reunión...", JLabel.CENTER);
+        lblMensajeEsperaAdmitido = new JLabel("Has sido admitido. Esperando que el anfitrión inicie la reunión...",
+                JLabel.CENTER);
         lblMensajeEsperaAdmitido.setFont(new Font("Segoe UI", Font.PLAIN, 15));
         gbc.gridy = 1;
         panel.add(lblMensajeEsperaAdmitido, gbc);
@@ -356,8 +358,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         pnlHeader.setBackground(new Color(40, 40, 45));
         pnlHeader.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(new Color(55, 55, 60), 1, true),
-                new EmptyBorder(10, 15, 10, 15)
-        ));
+                new EmptyBorder(10, 15, 10, 15)));
 
         lblTituloReunion = new JLabel("Sala de Reunión Activa: Código ------");
         lblTituloReunion.setFont(new Font("Segoe UI", Font.BOLD, 18));
@@ -405,14 +406,14 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         splitPane.setDividerLocation(480);
         splitPane.setResizeWeight(0.6);
 
-// Lado Izquierdo: Video Grid
-         pnlVideoGrid = new JPanel(new BorderLayout());
-         pnlVideoGrid.setBackground(new Color(20, 20, 25));
-         pnlVideoGrid.setBorder(new LineBorder(new Color(45, 45, 50), 1, true));
- 
-         pnlVideoContainer = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
-         pnlVideoContainer.setOpaque(false);
-         pnlVideoGrid.add(pnlVideoContainer, BorderLayout.CENTER);
+        // Lado Izquierdo: Video Grid
+        pnlVideoGrid = new JPanel(new BorderLayout());
+        pnlVideoGrid.setBackground(new Color(20, 20, 25));
+        pnlVideoGrid.setBorder(new LineBorder(new Color(45, 45, 50), 1, true));
+
+        pnlVideoContainer = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
+        pnlVideoContainer.setOpaque(false);
+        pnlVideoGrid.add(pnlVideoContainer, BorderLayout.CENTER);
 
         splitPane.setLeftComponent(pnlVideoGrid);
 
@@ -421,8 +422,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         pnlChat.setBackground(new Color(40, 40, 45));
         pnlChat.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(new Color(45, 45, 50), 1, true),
-                new EmptyBorder(10, 10, 10, 10)
-        ));
+                new EmptyBorder(10, 10, 10, 10)));
 
         txtAreaChat = new JTextArea();
         txtAreaChat.setEditable(false);
@@ -431,7 +431,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         txtAreaChat.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         txtAreaChat.setLineWrap(true);
         txtAreaChat.setWrapStyleWord(true);
-        
+
         JScrollPane scrollChat = new JScrollPane(txtAreaChat);
         scrollChat.setBorder(null);
         pnlChat.add(scrollChat, BorderLayout.CENTER);
@@ -447,9 +447,24 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         txtMensajeChat.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         txtMensajeChat.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(new Color(55, 55, 60), 1, true),
-                new EmptyBorder(5, 8, 5, 8)
-        ));
+                new EmptyBorder(5, 8, 5, 8)));
         txtMensajeChat.addActionListener(e -> enviarMensajeChat());
+        txtMensajeChat.addKeyListener(new java.awt.event.KeyAdapter() {
+            @Override
+            public void keyPressed(java.awt.event.KeyEvent e) {
+                if (e.getKeyCode() == java.awt.event.KeyEvent.VK_UP) {
+                    ChatInputMemento memento = chatCaretaker.getPrevious();
+                    if (memento != null) {
+                        txtMensajeChat.setText(memento.getText());
+                    }
+                } else if (e.getKeyCode() == java.awt.event.KeyEvent.VK_DOWN) {
+                    ChatInputMemento memento = chatCaretaker.getNext();
+                    if (memento != null) {
+                        txtMensajeChat.setText(memento.getText());
+                    }
+                }
+            }
+        });
         pnlChatInput.add(txtMensajeChat, BorderLayout.CENTER);
 
         JButton btnAdjuntar = new JButton("📎");
@@ -497,7 +512,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     private void solicitarUnirse() {
         String codigo = txtCodigoSala.getText().trim().toUpperCase();
         if (codigo.length() != 6) {
-            JOptionPane.showMessageDialog(this, "El código de sala debe tener exactamente 6 caracteres.", "Código Inválido", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "El código de sala debe tener exactamente 6 caracteres.",
+                    "Código Inválido", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
@@ -524,7 +540,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     }
 
     private void iniciarReunionHost() {
-        if (roomCode == null) return;
+        if (roomCode == null)
+            return;
 
         MensajeSocket msg = new MensajeSocket();
         msg.setType("START_MEETING_REQUEST");
@@ -595,7 +612,11 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
     private void enviarMensajeChat() {
         String texto = txtMensajeChat.getText().trim();
-        if (texto.isEmpty()) return;
+        if (texto.isEmpty())
+            return;
+
+        // Guardar estado de texto en el Caretaker (Memento)
+        chatCaretaker.addMemento(new ChatInputMemento(texto));
 
         MensajeSocket msg = new MensajeSocket();
         msg.setType("CHAT_MESSAGE");
@@ -652,15 +673,15 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             case "GET_FILES_RESPONSE":
                 procesarGetFilesResponse(mensaje);
                 break;
- 
+
             case "FILE_START":
                 procesarInicioDescarga(mensaje);
                 break;
- 
+
             case "FILE_CHUNK":
                 procesarChunkDescarga(mensaje);
                 break;
- 
+
             case "FILE_END":
                 procesarFinDescarga(mensaje);
                 break;
@@ -678,7 +699,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
                 cardLayout.show(mainContainer, "HOST");
                 System.out.println("[+] Sala creada con éxito: " + this.roomCode);
             } else {
-                JOptionPane.showMessageDialog(this, "Error al crear sala: " + mensaje.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Error al crear sala: " + mensaje.getMessage(), "Error",
+                        JOptionPane.ERROR_MESSAGE);
             }
         });
     }
@@ -690,7 +712,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
                 lblMensajeEspera.setText("Tu solicitud para ingresar a la sala " + this.roomCode + " está PENDIENTE.");
                 cardLayout.show(mainContainer, "INVITADO");
             } else {
-                JOptionPane.showMessageDialog(this, "Error al unirse: " + mensaje.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Error al unirse: " + mensaje.getMessage(), "Error",
+                        JOptionPane.ERROR_MESSAGE);
             }
         });
     }
@@ -702,7 +725,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             pnlListaEspera.repaint();
 
             // Deserializar la lista de solicitudes
-            java.lang.reflect.Type listType = new TypeToken<List<Map<String, Object>>>() {}.getType();
+            java.lang.reflect.Type listType = new TypeToken<List<Map<String, Object>>>() {
+            }.getType();
             List<Map<String, Object>> solicitudes = gson.fromJson(mensaje.getMessage(), listType);
 
             if (solicitudes == null || solicitudes.isEmpty()) {
@@ -728,8 +752,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
                 row.setPreferredSize(new Dimension(0, 50));
                 row.setBorder(BorderFactory.createCompoundBorder(
                         BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(230, 235, 240)),
-                        new EmptyBorder(5, 10, 5, 10)
-                ));
+                        new EmptyBorder(5, 10, 5, 10)));
 
                 JLabel lblNombre = new JLabel(guestName);
                 lblNombre.setFont(new Font("Segoe UI", Font.BOLD, 14));
@@ -772,9 +795,12 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             if ("ACCEPTED".equalsIgnoreCase(decision)) {
                 lblMensajeEsperaAdmitido.setText("¡Has sido admitido! Esperando que el anfitrión inicie la reunión...");
                 cardLayout.show(mainContainer, "INVITADO_ADMITIDO");
-                JOptionPane.showMessageDialog(this, "¡El anfitrión ha aceptado tu solicitud! Espera a que inicie la reunión.", "Acceso Admitido", JOptionPane.INFORMATION_MESSAGE);
+                JOptionPane.showMessageDialog(this,
+                        "¡El anfitrión ha aceptado tu solicitud! Espera a que inicie la reunión.", "Acceso Admitido",
+                        JOptionPane.INFORMATION_MESSAGE);
             } else {
-                JOptionPane.showMessageDialog(this, "El anfitrión ha rechazado tu solicitud de ingreso.", "Acceso Denegado", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "El anfitrión ha rechazado tu solicitud de ingreso.",
+                        "Acceso Denegado", JOptionPane.WARNING_MESSAGE);
                 this.roomCode = null;
                 cardLayout.show(mainContainer, "SELECTOR");
             }
@@ -785,7 +811,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         SwingUtilities.invokeLater(() -> {
             this.roomCode = mensaje.getRoomCode();
             entrarAReunion();
-            JOptionPane.showMessageDialog(this, "La reunión ha comenzado. Bienvenido(a).", "Reunión iniciada", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "La reunión ha comenzado. Bienvenido(a).", "Reunión iniciada",
+                    JOptionPane.INFORMATION_MESSAGE);
         });
     }
 
@@ -794,7 +821,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             String remitente = mensaje.getUserName();
             String texto = mensaje.getMessage();
             txtAreaChat.append("[" + remitente + "]: " + texto + "\n");
-            
+
             // Auto-scroll al final del chat
             txtAreaChat.setCaretPosition(txtAreaChat.getDocument().getLength());
         });
@@ -802,13 +829,15 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
     private void procesarCameraFrame(MensajeSocket mensaje) {
         String payload = mensaje.getMessage();
-        if (payload == null || payload.isEmpty()) return;
+        if (payload == null || payload.isEmpty())
+            return;
 
         try {
             byte[] bytes = Base64.getDecoder().decode(payload);
             ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
             BufferedImage img = ImageIO.read(bais);
-            if (img == null) return;
+            if (img == null)
+                return;
 
             Integer senderId = mensaje.getUserId();
             String senderName = mensaje.getUserName();
@@ -820,11 +849,13 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     }
 
     private void procesarEstadoCamara(MensajeSocket mensaje) {
-        if (mensaje == null) return;
+        if (mensaje == null)
+            return;
         Integer senderId = mensaje.getUserId();
         String senderName = mensaje.getUserName();
         String estado = mensaje.getMessage();
-        if (senderId == null || estado == null) return;
+        if (senderId == null || estado == null)
+            return;
 
         activeCameraStates.put(senderId, estado);
 
@@ -832,16 +863,19 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     }
 
     private void updateVideoFeed(Integer senderId, String senderName, BufferedImage img) {
-        if (senderId == null) return;
+        if (senderId == null)
+            return;
 
-        // Si el estado de la cámara del remitente es OFF, ignorar el frame para evitar condiciones de carrera
+        // Si el estado de la cámara del remitente es OFF, ignorar el frame para evitar
+        // condiciones de carrera
         String estado = activeCameraStates.get(senderId);
         if ("OFF".equalsIgnoreCase(estado)) {
             return;
         }
 
         JLabel lbl = getOrCreateFeedLabel(senderId, senderName);
-        if (lbl == null) return;
+        if (lbl == null)
+            return;
 
         ImageIcon icon = new ImageIcon(img.getScaledInstance(320, 240, Image.SCALE_SMOOTH));
         lbl.setIcon(icon);
@@ -855,7 +889,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
     private void updateVideoState(Integer senderId, String senderName, String estado) {
         JLabel lbl = getOrCreateFeedLabel(senderId, senderName);
-        if (lbl == null) return;
+        if (lbl == null)
+            return;
 
         JPanel panel = videoFeedPanels.get(senderId);
         if (panel != null) {
@@ -907,7 +942,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     @Override
     public void onDesconexion() {
         SwingUtilities.invokeLater(() -> {
-            JOptionPane.showMessageDialog(this, "Se ha perdido la conexión con el servidor. Saliendo...", "Desconectado", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Se ha perdido la conexión con el servidor. Saliendo...",
+                    "Desconectado", JOptionPane.ERROR_MESSAGE);
             this.dispose();
             System.exit(0);
         });
@@ -919,14 +955,15 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             java.io.File file = chooser.getSelectedFile();
             if (file.length() > 5 * 1024 * 1024) { // Límite de 5 MB
-                JOptionPane.showMessageDialog(this, "El archivo supera el límite de 5 MB.", "Archivo muy grande", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "El archivo supera el límite de 5 MB.", "Archivo muy grande",
+                        JOptionPane.WARNING_MESSAGE);
                 return;
             }
 
             // Iniciar subida en hilo de fondo para no colgar el EDT
             String fileId = java.util.UUID.randomUUID().toString().substring(0, 8);
             String nombreArchivo = file.getName();
-            
+
             new Thread(() -> {
                 try (java.io.FileInputStream fis = new java.io.FileInputStream(file)) {
                     // 1. Enviar FILE_START
@@ -943,7 +980,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
                     // 2. Enviar FILE_CHUNKs
                     while ((bytesLeidos = fis.read(buffer)) != -1) {
-                        byte[] tempBuf = bytesLeidos == buffer.length ? buffer : java.util.Arrays.copyOf(buffer, bytesLeidos);
+                        byte[] tempBuf = bytesLeidos == buffer.length ? buffer
+                                : java.util.Arrays.copyOf(buffer, bytesLeidos);
                         String chunkBase64 = Base64.getEncoder().encodeToString(tempBuf);
 
                         MensajeSocket chunkMsg = new MensajeSocket();
@@ -953,7 +991,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
                         chunkMsg.setUserName(userName);
                         chunkMsg.setMessage(fileId + "|" + chunkBase64);
                         ClienteConexion.getInstancia().enviarMensaje(chunkMsg);
-                        
+
                         Thread.sleep(20); // Pausa corta
                     }
 
@@ -965,15 +1003,17 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
                     endMsg.setUserName(userName);
                     endMsg.setMessage(fileId);
                     ClienteConexion.getInstancia().enviarMensaje(endMsg);
-                    
+
                     SwingUtilities.invokeLater(() -> {
-                        JOptionPane.showMessageDialog(this, "¡Archivo '" + nombreArchivo + "' enviado con éxito!", "Éxito", JOptionPane.INFORMATION_MESSAGE);
+                        JOptionPane.showMessageDialog(this, "¡Archivo '" + nombreArchivo + "' enviado con éxito!",
+                                "Éxito", JOptionPane.INFORMATION_MESSAGE);
                     });
 
                 } catch (Exception e) {
                     System.err.println("[-] Error al subir archivo: " + e.getMessage());
                     SwingUtilities.invokeLater(() -> {
-                        JOptionPane.showMessageDialog(this, "Error al subir archivo: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                        JOptionPane.showMessageDialog(this, "Error al subir archivo: " + e.getMessage(), "Error",
+                                JOptionPane.ERROR_MESSAGE);
                     });
                 }
             }).start();
@@ -991,7 +1031,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
     private void procesarGetFilesResponse(MensajeSocket mensaje) {
         SwingUtilities.invokeLater(() -> {
-            java.lang.reflect.Type listType = new TypeToken<List<Map<String, Object>>>() {}.getType();
+            java.lang.reflect.Type listType = new TypeToken<List<Map<String, Object>>>() {
+            }.getType();
             List<Map<String, Object>> archivos = gson.fromJson(mensaje.getMessage(), listType);
 
             // Crear el diálogo modal para ver los archivos
@@ -1008,7 +1049,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             pnlCentral.add(lblTitulo, BorderLayout.NORTH);
 
             // Tabla de archivos
-            String[] columnas = {"Archivo", "Compartido por", "Fecha"};
+            String[] columnas = { "Archivo", "Compartido por", "Fecha" };
             Object[][] datos = new Object[archivos.size()][3];
             for (int i = 0; i < archivos.size(); i++) {
                 Map<String, Object> arch = archivos.get(i);
@@ -1018,7 +1059,9 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             }
 
             JTable tabla = new JTable(datos, columnas) {
-                public boolean isCellEditable(int row, int column) { return false; }
+                public boolean isCellEditable(int row, int column) {
+                    return false;
+                }
             };
             tabla.setFont(new Font("Segoe UI", Font.PLAIN, 12));
             tabla.setRowHeight(25);
@@ -1039,7 +1082,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             btnDescargar.addActionListener(e -> {
                 int filaSel = tabla.getSelectedRow();
                 if (filaSel == -1) {
-                    JOptionPane.showMessageDialog(dialog, "Seleccione un archivo de la lista.", "Selección requerida", JOptionPane.WARNING_MESSAGE);
+                    JOptionPane.showMessageDialog(dialog, "Seleccione un archivo de la lista.", "Selección requerida",
+                            JOptionPane.WARNING_MESSAGE);
                     return;
                 }
 
@@ -1051,7 +1095,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
                 JFileChooser saveChooser = new JFileChooser();
                 saveChooser.setSelectedFile(new java.io.File(nombreArchivo));
                 saveChooser.setDialogTitle("Guardar archivo descargado");
-                
+
                 if (saveChooser.showSaveDialog(dialog) == JFileChooser.APPROVE_OPTION) {
                     java.io.File destFile = saveChooser.getSelectedFile();
                     try {
@@ -1067,11 +1111,13 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
                         downloadReq.setMessage(rutaFisica);
                         ClienteConexion.getInstancia().enviarMensaje(downloadReq);
 
-                        JOptionPane.showMessageDialog(dialog, "Iniciando descarga de '" + nombreArchivo + "'...", "Descarga en curso", JOptionPane.INFORMATION_MESSAGE);
+                        JOptionPane.showMessageDialog(dialog, "Iniciando descarga de '" + nombreArchivo + "'...",
+                                "Descarga en curso", JOptionPane.INFORMATION_MESSAGE);
                         dialog.dispose();
 
                     } catch (Exception ex) {
-                        JOptionPane.showMessageDialog(dialog, "Error al preparar archivo local: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                        JOptionPane.showMessageDialog(dialog, "Error al preparar archivo local: " + ex.getMessage(),
+                                "Error", JOptionPane.ERROR_MESSAGE);
                     }
                 }
             });
@@ -1085,17 +1131,19 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
     private void procesarInicioDescarga(MensajeSocket mensaje) {
         String payload = mensaje.getMessage();
-        if (payload == null || !payload.contains("|")) return;
+        if (payload == null || !payload.contains("|"))
+            return;
 
         String[] partes = payload.split("\\|", 2);
         String rutaFisica = partes[0];
-        
+
         System.out.println("[*] Iniciando descarga local para: " + rutaFisica);
     }
 
     private void procesarChunkDescarga(MensajeSocket mensaje) {
         String payload = mensaje.getMessage();
-        if (payload == null || !payload.contains("|")) return;
+        if (payload == null || !payload.contains("|"))
+            return;
 
         String[] partes = payload.split("\\|", 2);
         String rutaFisica = partes[0];
@@ -1129,9 +1177,11 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
                     nombreArchivo = nombreArchivo.substring(nombreArchivo.indexOf("_") + 1);
                 }
                 String finalNombre = nombreArchivo;
-                
+
                 SwingUtilities.invokeLater(() -> {
-                    JOptionPane.showMessageDialog(this, "¡La descarga de '" + finalNombre + "' ha finalizado con éxito!", "Descarga Completada", JOptionPane.INFORMATION_MESSAGE);
+                    JOptionPane.showMessageDialog(this,
+                            "¡La descarga de '" + finalNombre + "' ha finalizado con éxito!", "Descarga Completada",
+                            JOptionPane.INFORMATION_MESSAGE);
                 });
                 System.out.println("[OK] Descarga finalizada con éxito.");
             } catch (Exception e) {
@@ -1156,7 +1206,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     }
 
     private void enviarEstadoCamara(String estado) {
-        if (roomCode == null) return;
+        if (roomCode == null)
+            return;
         MensajeSocket estadoMsg = new MensajeSocket();
         estadoMsg.setType("CAMERA_STATE");
         estadoMsg.setRoomCode(roomCode);
@@ -1168,7 +1219,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
     private void startCameraSource() {
         btnToggleCamera.setEnabled(false);
-        
+
         new Thread(() -> {
             // Verificar si el usuario apagó la cámara antes de empezar
             if (!camaraActiva || roomCode == null) {
@@ -1176,14 +1227,16 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
                 return;
             }
 
-            // Instanciar el proxy utilizando el creador físico inicial (Factory Method & Proxy)
+            // Instanciar el proxy utilizando el creador físico inicial (Factory Method &
+            // Proxy)
             CameraCreator physicalCreator = new PhysicalCameraCreator();
             CameraProxy proxy = new CameraProxy(userId, userName, roomCode, physicalCreator);
             cameraStream = proxy;
 
             boolean started = proxy.start();
-            
-            // Verificar si la cámara fue apagada o se abandonó la sala mientras se inicializaba
+
+            // Verificar si la cámara fue apagada o se abandonó la sala mientras se
+            // inicializaba
             if (!camaraActiva || roomCode == null) {
                 proxy.stop();
                 if (cameraStream == proxy) {
@@ -1196,19 +1249,20 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             if (started) {
                 SwingUtilities.invokeLater(() -> {
                     btnToggleCamera.setEnabled(true);
-                    
+
                     // Si se hizo fallback a la simulación, alertar al usuario
                     if (proxy.getRealSubject() instanceof SimulatedCameraStrategy) {
                         JOptionPane.showMessageDialog(
-                            RoomFrame.this,
-                            "No se pudo acceder a la cámara física.\n" +
-                            "Asegúrate de que no esté en uso por otra aplicación y de que los permisos de cámara\n" +
-                            "estén habilitados en la configuración de privacidad de Windows:\n" +
-                            "Configuración -> Privacidad y seguridad -> Cámara (permitir que las aplicaciones de escritorio accedan).\n\n" +
-                            "Se activará la cámara de simulación académica.",
-                            "Advertencia de Cámara",
-                            JOptionPane.WARNING_MESSAGE
-                        );
+                                RoomFrame.this,
+                                "No se pudo acceder a la cámara física.\n" +
+                                        "Asegúrate de que no esté en uso por otra aplicación y de que los permisos de cámara\n"
+                                        +
+                                        "estén habilitados en la configuración de privacidad de Windows:\n" +
+                                        "Configuración -> Privacidad y seguridad -> Cámara (permitir que las aplicaciones de escritorio accedan).\n\n"
+                                        +
+                                        "Se activará la cámara de simulación académica.",
+                                "Advertencia de Cámara",
+                                JOptionPane.WARNING_MESSAGE);
                     }
                 });
             } else {

@@ -173,10 +173,16 @@ LP2-Zoom/
 │       ├── model/
 │       │   └── MensajeSocket.java # Modelo de datos del protocolo JSON
 │       ├── network/
-│       │   └── ClienteConexion.java # Gestor de sockets (Singleton + Listeners)
+│       │   ├── ClienteConexion.java # Gestor de sockets (Singleton + Bridge Abstraction)
+│       │   └── bridge/
+│       │       ├── ProtocolBridge.java # Implementador de Bridge de serialización
+│       │       └── JSONProtocolBridge.java # Implementador concreto JSON
 │       └── UI/
 │           ├── LoginFrame.java   # Ventana de autenticación
-│           └── RoomFrame.java    # Ventana de salas (Selector, Espera, Reunión)
+│           ├── RoomFrame.java    # Ventana de salas (Selector, Espera, Reunión con Caretaker de Memento)
+│           └── memento/
+│               ├── ChatInputMemento.java # Memento para historial de entrada de chat
+│               └── ChatHistoryCaretaker.java # Caretaker del historial de entrada
 ├── Servidor/                     # Módulo del Servidor (Lógica de sockets + Persistencia)
 │   ├── pom.xml                   # Configuración Maven del Servidor (JDBC, Gson, etc.)
 │   └── src/main/

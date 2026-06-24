@@ -7,7 +7,7 @@ public abstract class CameraCreator {
     /**
      * Método de fábrica para instanciar una estrategia de cámara.
      * 
-     * @param userId ID del usuario.
+     * @param userId   ID del usuario.
      * @param userName Nombre del usuario.
      * @param roomCode Código de la sala.
      * @return Una instancia de CameraStrategy.

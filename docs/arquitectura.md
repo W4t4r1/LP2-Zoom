@@ -231,3 +231,27 @@ classDiagram
     SupabaseDBCreator ..> DBService : creates
 ```
 
+---
+
+### 5.3. Patrón Singleton (Creacional - Cliente)
+Se utiliza para centralizar la conexión física TCP en el cliente, evitando duplicaciones de sockets innecesarias.
+- **Estructura:**
+  - [ClienteConexion](../Cliente/src/main/java/network/ClienteConexion.java): Posee una instancia estática privada de sí misma (`instancia`) y expone el método estático sincronizado `getInstancia()`.
+- **Beneficio:** Garantiza un único canal de comunicación bidireccional estable durante el ciclo de vida del cliente.
+
+### 5.4. Patrón Memento (Comportamiento - Cliente)
+Se utiliza para guardar y navegar por los estados anteriores del campo de texto de redacción de chat.
+- **Estructura:**
+  - [ChatInputMemento](../Cliente/src/main/java/UI/memento/ChatInputMemento.java) (Memento): Guarda de forma inmutable el texto actual.
+  - [ChatHistoryCaretaker](../Cliente/src/main/java/UI/memento/ChatHistoryCaretaker.java) (Caretaker): Mantiene una lista ordenada de mementos y maneja un índice de posición para realizar la navegación mediante flechas Arriba (↑) y Abajo (↓).
+- **Beneficio:** Brinda una experiencia de usuario enriquecida (historial de redacción de consola) encapsulando el estado sin violar su privacidad.
+
+### 5.5. Patrón Bridge (Estructural - Cliente)
+Desacopla la abstracción de transmisión de la red del formato o serializador utilizado en la red.
+- **Estructura:**
+  - **Abstracción:** [ClienteConexion](../Cliente/src/main/java/network/ClienteConexion.java) que actúa como la abstracción de transporte física.
+  - **Implementador (Bridge Interface):** [ProtocolBridge](../Cliente/src/main/java/network/bridge/ProtocolBridge.java) que define la serialización.
+  - **Implementador Concreto:** [JSONProtocolBridge](../Cliente/src/main/java/network/bridge/JSONProtocolBridge.java) que implementa la traducción a JSON con Gson.
+- **Beneficio:** Facilita cambiar el formato de mensajería (de JSON a XML o binario) alterando únicamente la clase implementadora del Bridge, sin afectar el código de red de conexión ni la UI de Swing.
+
+
