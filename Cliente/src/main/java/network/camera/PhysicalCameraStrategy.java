@@ -24,6 +24,7 @@ public class PhysicalCameraStrategy implements CameraStrategy {
     private final int fps = 5;
     private Webcam webcam;
     private ScheduledExecutorService executor;
+    private int consecutiveFailures = 0;
 
     public PhysicalCameraStrategy(int userId, String userName, String roomCode) {
         this.userId = userId;
@@ -50,46 +51,63 @@ public class PhysicalCameraStrategy implements CameraStrategy {
 
             // Intentar abrir la primera cámara disponible que funcione (evitando IR/Hello o bloqueadas)
             boolean opened = false;
+            java.util.Set<String> failedCameras = new java.util.HashSet<>();
+
             for (Webcam w : webcams) {
                 // Saltar cámaras de infrarrojos (IR) si es posible por nombre
                 String nameLower = w.getName().toLowerCase();
-                if (nameLower.contains("ir camera") || nameLower.contains("hello") || nameLower.contains("virtual")) {
-                    System.out.println("[*] [PhysicalCamera] Saltando cámara sospechosa de ser IR/Virtual: " + w.getName());
+                if (nameLower.contains("ir camera") || nameLower.contains("hello") || nameLower.contains("virtual") || nameLower.contains("voice") || nameLower.contains("audio") || nameLower.contains("control")) {
+                    System.out.println("[*] [PhysicalCamera] Saltando cámara sospechosa de ser IR/Virtual/Audio: " + w.getName());
                     continue;
                 }
                 
                 System.out.println("[*] [PhysicalCamera] Intentando abrir: " + w.getName());
                 try {
-                    w.setViewSize(new java.awt.Dimension(width, height));
-                    if (w.open()) {
+                    // No forzamos setViewSize para evitar errores de mismatch de buffer nativos
+                    
+                    // Ejecutar open y primer testImg en un executor con timeout de 2000ms
+                    java.util.concurrent.ExecutorService openExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
+                    java.util.concurrent.Future<Boolean> openFuture = openExecutor.submit(() -> {
+                        if (w.open()) {
+                            // Intentar capturar un frame
+                            for (int i = 0; i < 3; i++) {
+                                java.awt.image.BufferedImage img = w.getImage();
+                                if (img != null) return true;
+                                try { Thread.sleep(100); } catch (InterruptedException ignored) {}
+                            }
+                        }
+                        return false;
+                    });
+                    
+                    boolean success = false;
+                    try {
+                        success = openFuture.get(2000, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    } catch (java.util.concurrent.TimeoutException te) {
+                        System.err.println("[-] [PhysicalCamera] Timeout al intentar abrir/probar la cámara " + w.getName());
+                        openFuture.cancel(true);
+                    } catch (Exception e) {
+                        System.err.println("[-] [PhysicalCamera] Excepción al probar la cámara: " + e.getMessage());
+                    } finally {
+                        openExecutor.shutdownNow();
+                    }
+                    
+                    if (success) {
                         webcam = w;
                         opened = true;
-                        System.out.println("[+] [PhysicalCamera] Cámara abierta con éxito: " + w.getName());
+                        System.out.println("[+] [PhysicalCamera] Cámara abierta con éxito y capturando frames: " + w.getName());
                         break;
+                    } else {
+                        System.err.println("[-] [PhysicalCamera] No se pudo abrir o capturar frames de " + w.getName() + ". Cerrando...");
+                        failedCameras.add(w.getName());
+                        try { w.close(); } catch (Exception ignored) {}
                     }
                 } catch (Throwable t) {
                     System.err.println("[-] [PhysicalCamera] Error al abrir " + w.getName() + ": " + t.getMessage());
+                    failedCameras.add(w.getName());
                 }
             }
 
-            // Si ninguna funcionó con el filtro, intentar con cualquiera en la lista
-            if (!opened) {
-                System.out.println("[*] [PhysicalCamera] Reintentando con todas las cámaras de la lista...");
-                for (Webcam w : webcams) {
-                    System.out.println("[*] [PhysicalCamera] Intentando abrir (segundo intento): " + w.getName());
-                    try {
-                        w.setViewSize(new java.awt.Dimension(width, height));
-                        if (w.open()) {
-                            webcam = w;
-                            opened = true;
-                            System.out.println("[+] [PhysicalCamera] Cámara abierta con éxito (segundo intento): " + w.getName());
-                            break;
-                        }
-                    } catch (Throwable t) {
-                        System.err.println("[-] [PhysicalCamera] Error al abrir " + w.getName() + ": " + t.getMessage());
-                    }
-                }
-            }
+
 
             if (!opened || webcam == null) {
                 System.err.println("[-] [PhysicalCamera] No se pudo abrir ninguna webcam física.");
@@ -138,7 +156,26 @@ public class PhysicalCameraStrategy implements CameraStrategy {
             if (tempWebcam == null || !tempWebcam.isOpen()) return;
 
             BufferedImage img = tempWebcam.getImage();
-            if (img == null) return;
+            if (img == null) {
+                consecutiveFailures++;
+                if (consecutiveFailures >= 5) {
+                    System.err.println("[-] [PhysicalCamera] Detectadas 5 fallas consecutivas (frame nulo). Forzando fallback a simulación...");
+                    UI.RoomFrame activeFrame = UI.RoomFrame.getActiveInstance();
+                    if (activeFrame != null) {
+                        activeFrame.forzarFallbackASimulacion();
+                    }
+                }
+                return;
+            }
+
+            // Si hay éxito, resetear contador
+            consecutiveFailures = 0;
+
+            // Renderizar localmente en la interfaz
+            UI.RoomFrame activeFrame = UI.RoomFrame.getActiveInstance();
+            if (activeFrame != null) {
+                activeFrame.mostrarFrameLocal(img);
+            }
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             ImageIO.write(img, "jpg", baos);
@@ -153,6 +190,15 @@ public class PhysicalCameraStrategy implements CameraStrategy {
             ClienteConexion.getInstancia().enviarMensaje(msg);
         } catch (Exception e) {
             System.err.println("[-] [PhysicalCamera] Error al capturar frame de webcam: " + e.getMessage());
+            consecutiveFailures++;
+            if (consecutiveFailures >= 5) {
+                System.err.println("[-] [PhysicalCamera] Detectadas 5 fallas consecutivas por excepción. Forzando fallback a simulación...");
+                UI.RoomFrame activeFrame = UI.RoomFrame.getActiveInstance();
+                if (activeFrame != null) {
+                    activeFrame.forzarFallbackASimulacion();
+                }
+            }
         }
     }
+
 }

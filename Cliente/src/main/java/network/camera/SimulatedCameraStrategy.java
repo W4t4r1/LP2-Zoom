@@ -97,6 +97,12 @@ public class SimulatedCameraStrategy implements CameraStrategy {
 
             g.dispose();
 
+            // Renderizar localmente en la interfaz
+            UI.RoomFrame activeFrame = UI.RoomFrame.getActiveInstance();
+            if (activeFrame != null) {
+                activeFrame.mostrarFrameLocal(img);
+            }
+
             // Comprimir a JPG
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             ImageIO.write(img, "jpg", baos);

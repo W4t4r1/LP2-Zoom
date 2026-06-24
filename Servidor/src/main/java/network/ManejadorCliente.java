@@ -357,6 +357,9 @@ public class ManejadorCliente implements Runnable {
 
         System.out.println("[-] Usuario " + this.userName + " sale de la sala " + this.roomCode);
         
+        // Retransmitir LEAVE_ROOM a los demás
+        MainServidor.retransmitirMensaje(mensaje, this.userId);
+        
         // Notificar estado de cámara OFF a los demás antes de salir
         MensajeSocket camOffMsg = new MensajeSocket();
         camOffMsg.setType("CAMERA_STATE");
@@ -483,6 +486,14 @@ public class ManejadorCliente implements Runnable {
                 
                 // Si estaba en una sala, notificar
                 if (this.roomCode != null) {
+                    // Notificar LEAVE_ROOM a los demás
+                    MensajeSocket leaveMsg = new MensajeSocket();
+                    leaveMsg.setType("LEAVE_ROOM");
+                    leaveMsg.setRoomCode(this.roomCode);
+                    leaveMsg.setUserId(this.userId);
+                    leaveMsg.setUserName(this.userName);
+                    MainServidor.retransmitirMensaje(leaveMsg, this.userId);
+
                     // Notificar estado de cámara OFF a los demás por desconexión abrupta
                     MensajeSocket camOffMsg = new MensajeSocket();
                     camOffMsg.setType("CAMERA_STATE");

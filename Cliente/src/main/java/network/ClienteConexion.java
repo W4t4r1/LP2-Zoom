@@ -15,6 +15,7 @@ public class ClienteConexion {
     private PrintWriter salida;
     private Thread hiloEscucha;
     private boolean conectado = false;
+    private String hostActual;
 
     // Bridge Abstraction: Delegar serialización al implementador del Bridge
     private final ProtocolBridge protocolBridge;
@@ -51,6 +52,7 @@ public class ClienteConexion {
             entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             salida = new PrintWriter(socket.getOutputStream(), true);
             conectado = true;
+            hostActual = host;
             
             // Iniciar hilo de escucha asíncrono para no congelar la UI
             hiloEscucha = new Thread(this::escucharServidor);
@@ -93,6 +95,7 @@ public class ClienteConexion {
     public synchronized void desconectar() {
         if (!conectado) return;
         conectado = false;
+        hostActual = null;
         try {
             if (socket != null && !socket.isClosed()) {
                 socket.close();
@@ -140,5 +143,9 @@ public class ClienteConexion {
 
     public boolean isConectado() {
         return conectado;
+    }
+
+    public String getHostActual() {
+        return hostActual;
     }
 }

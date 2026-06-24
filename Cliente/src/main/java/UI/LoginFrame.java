@@ -13,15 +13,17 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
 
     private JTextField txtUsuario;
     private JPasswordField txtPassword;
+    private JTextField txtIp;
     private JButton btnIngresar;
 
     // Variables de red
     private Gson gson;
+    private boolean cambiandoIp = false;
 
     public LoginFrame() {
         // Configuración básica de la ventana
         setTitle("Zoom Sockets - Iniciar Sesión");
-        setSize(380, 480);
+        setSize(380, 530);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         setResizable(false); // Evitamos que se deforme el diseño
@@ -77,6 +79,19 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
         txtPassword.setForeground(colorTexto);
         txtPassword.setMaximumSize(new Dimension(Integer.MAX_VALUE, 35));
 
+        // 4b. Campo de IP del Servidor
+        JPanel pnlIpLabel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        pnlIpLabel.setBackground(Color.WHITE);
+        JLabel lblIp = new JLabel("IP DEL SERVIDOR");
+        lblIp.setFont(fontLabels);
+        lblIp.setForeground(Color.DARK_GRAY);
+        pnlIpLabel.add(lblIp);
+
+        txtIp = new JTextField("localhost");
+        txtIp.setFont(fontCampos);
+        txtIp.setForeground(colorTexto);
+        txtIp.setMaximumSize(new Dimension(Integer.MAX_VALUE, 35));
+
         // 5. Botón de Ingreso Moderno
         btnIngresar = new JButton("Ingresar a la Sala");
         btnIngresar.setFont(new Font("Segoe UI", Font.BOLD, 15));
@@ -102,17 +117,22 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
         mainPanel.add(lblTitulo);
         mainPanel.add(Box.createRigidArea(new Dimension(0, 10)));
         mainPanel.add(lblSubtitulo);
-        mainPanel.add(Box.createRigidArea(new Dimension(0, 40)));
+        mainPanel.add(Box.createRigidArea(new Dimension(0, 30)));
 
         mainPanel.add(pnlUsrLabel);
         mainPanel.add(Box.createRigidArea(new Dimension(0, 5)));
         mainPanel.add(txtUsuario);
-        mainPanel.add(Box.createRigidArea(new Dimension(0, 20)));
+        mainPanel.add(Box.createRigidArea(new Dimension(0, 15)));
 
         mainPanel.add(pnlPassLabel);
         mainPanel.add(Box.createRigidArea(new Dimension(0, 5)));
         mainPanel.add(txtPassword);
-        mainPanel.add(Box.createRigidArea(new Dimension(0, 40)));
+        mainPanel.add(Box.createRigidArea(new Dimension(0, 15)));
+
+        mainPanel.add(pnlIpLabel);
+        mainPanel.add(Box.createRigidArea(new Dimension(0, 5)));
+        mainPanel.add(txtIp);
+        mainPanel.add(Box.createRigidArea(new Dimension(0, 30)));
 
         mainPanel.add(btnIngresar);
 
@@ -121,7 +141,7 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
         // --- LÓGICA DE RED Y EVENTOS ---
         // Registrar esta ventana como oyente de red
         ClienteConexion.getInstancia().setListener(this);
-        conectarAlServidor();
+        conectarAlServidor(txtIp.getText().trim());
 
         btnIngresar.addActionListener(new ActionListener() {
             @Override
@@ -131,14 +151,15 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
         });
     }
 
-    private void conectarAlServidor() {
+    private void conectarAlServidor(String host) {
         // Conexión asíncrona al iniciar
         new Thread(() -> {
-            boolean exito = ClienteConexion.getInstancia().conectar("172.17.148.85", 5000);
+            ClienteConexion.getInstancia().setListener(this);
+            boolean exito = ClienteConexion.getInstancia().conectar(host, 5000);
             if (!exito) {
                 SwingUtilities.invokeLater(() -> {
                     JOptionPane.showMessageDialog(this,
-                            "No se pudo conectar al servidor. Enciéndalo primero.",
+                            "No se pudo conectar al servidor (" + host + "). Enciéndalo primero.",
                             "Error de Conexión",
                             JOptionPane.ERROR_MESSAGE);
                 });
@@ -149,17 +170,44 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
     private void ejecutarLogin() {
         String usuario = txtUsuario.getText().trim();
         String password = new String(txtPassword.getPassword()).trim();
+        String ipServidor = txtIp.getText().trim();
 
-        if (usuario.isEmpty() || password.isEmpty()) {
+        if (usuario.isEmpty() || password.isEmpty() || ipServidor.isEmpty()) {
             JOptionPane.showMessageDialog(this, "Por favor, complete todos los campos.", "Campos Vacíos",
                     JOptionPane.WARNING_MESSAGE);
             return;
         }
 
-        if (!ClienteConexion.getInstancia().isConectado()) {
-            JOptionPane.showMessageDialog(this, "Sin conexión con el servidor. Reintentando...", "Error",
-                    JOptionPane.ERROR_MESSAGE);
-            conectarAlServidor();
+        // Si no está conectado o la IP cambió, intentamos conectar/reconectar
+        if (!ClienteConexion.getInstancia().isConectado() || 
+            !ipServidor.equals(ClienteConexion.getInstancia().getHostActual())) {
+            
+            if (ClienteConexion.getInstancia().isConectado()) {
+                cambiandoIp = true;
+                ClienteConexion.getInstancia().desconectar();
+            }
+            
+            btnIngresar.setEnabled(false);
+            btnIngresar.setText("Conectando...");
+            
+            new Thread(() -> {
+                ClienteConexion.getInstancia().setListener(this);
+                boolean exito = ClienteConexion.getInstancia().conectar(ipServidor, 5000);
+                SwingUtilities.invokeLater(() -> {
+                    btnIngresar.setEnabled(true);
+                    btnIngresar.setText("Ingresar a la Sala");
+                    cambiandoIp = false;
+                    if (!exito) {
+                        JOptionPane.showMessageDialog(this,
+                                "No se pudo conectar al servidor en: " + ipServidor,
+                                "Error de Conexión",
+                                JOptionPane.ERROR_MESSAGE);
+                    } else {
+                        // Re-intentar login ya conectados
+                        ejecutarLogin();
+                    }
+                });
+            }).start();
             return;
         }
 
@@ -211,10 +259,12 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
         SwingUtilities.invokeLater(() -> {
             btnIngresar.setEnabled(true);
             btnIngresar.setText("Ingresar a la Sala");
-            JOptionPane.showMessageDialog(this,
-                    "Se ha perdido la conexión con el servidor.",
-                    "Desconectado",
-                    JOptionPane.WARNING_MESSAGE);
+            if (!cambiandoIp) {
+                JOptionPane.showMessageDialog(this,
+                        "Se ha perdido la conexión con el servidor.",
+                        "Desconectado",
+                        JOptionPane.WARNING_MESSAGE);
+            }
         });
     }
 

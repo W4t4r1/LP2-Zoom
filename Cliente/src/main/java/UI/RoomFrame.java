@@ -25,6 +25,7 @@ import UI.memento.ChatInputMemento;
 import UI.memento.ChatHistoryCaretaker;
 
 public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener {
+    private static RoomFrame activeInstance;
 
     private int userId;
     private String userName;
@@ -59,7 +60,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     private JPanel pnlVideoGrid;
     private JPanel pnlVideoContainer;
     private JButton btnToggleCamera;
-    private boolean camaraActiva = true;
+    private boolean camaraActiva = false;
     private java.util.Map<Integer, JLabel> videoFeeds = new ConcurrentHashMap<>();
     private java.util.Map<Integer, JPanel> videoFeedPanels = new ConcurrentHashMap<>();
     private final java.util.Map<Integer, String> activeCameraStates = new ConcurrentHashMap<>();
@@ -69,7 +70,16 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     private java.util.Map<String, java.io.FileOutputStream> descargasEnProgreso = new java.util.concurrent.ConcurrentHashMap<>();
     private final ChatHistoryCaretaker chatCaretaker = new ChatHistoryCaretaker();
 
+    // Pool de hilos para decodificación de video y procesamiento de disco asíncrono
+    private final java.util.concurrent.ExecutorService videoDecoderExecutor = 
+        java.util.concurrent.Executors.newFixedThreadPool(2, r -> {
+            Thread t = new Thread(r, "VideoDecoderPool");
+            t.setDaemon(true);
+            return t;
+        });
+
     public RoomFrame(int userId, String userName) {
+        activeInstance = this;
         this.userId = userId;
         this.userName = userName;
         this.gson = new Gson();
@@ -88,6 +98,10 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             public void windowClosing(WindowEvent e) {
                 salirDeSalaActual();
                 ClienteConexion.getInstancia().desconectar();
+                if (videoDecoderExecutor != null) {
+                    videoDecoderExecutor.shutdown();
+                }
+                activeInstance = null;
             }
         });
 
@@ -377,8 +391,8 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         btnArchivos.addActionListener(e -> solicitarListaArchivos());
         pnlHeaderButtons.add(btnArchivos);
 
-        btnToggleCamera = new JButton("Cámara: ON");
-        btnToggleCamera.setBackground(new Color(46, 204, 113));
+        btnToggleCamera = new JButton("Cámara: OFF");
+        btnToggleCamera.setBackground(new Color(192, 57, 43));
         btnToggleCamera.setForeground(Color.WHITE);
         btnToggleCamera.setFont(new Font("Segoe UI", Font.BOLD, 12));
         btnToggleCamera.setFocusPainted(false);
@@ -572,9 +586,13 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
         // Notificar el estado de cámara actual al entrar a la reunión
         if (camaraActiva) {
+            activeCameraStates.put(this.userId, "ON");
+            updateVideoState(this.userId, this.userName, "ON");
             enviarEstadoCamara("ON");
             startCameraSource();
         } else {
+            activeCameraStates.put(this.userId, "OFF");
+            updateVideoState(this.userId, this.userName, "OFF");
             enviarEstadoCamara("OFF");
         }
     }
@@ -668,6 +686,10 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
             case "CAMERA_STATE":
                 procesarEstadoCamara(mensaje);
+                break;
+
+            case "LEAVE_ROOM":
+                procesarUsuarioSalio(mensaje);
                 break;
 
             case "GET_FILES_RESPONSE":
@@ -828,24 +850,26 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     }
 
     private void procesarCameraFrame(MensajeSocket mensaje) {
-        String payload = mensaje.getMessage();
-        if (payload == null || payload.isEmpty())
-            return;
-
-        try {
-            byte[] bytes = Base64.getDecoder().decode(payload);
-            ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
-            BufferedImage img = ImageIO.read(bais);
-            if (img == null)
+        videoDecoderExecutor.submit(() -> {
+            String payload = mensaje.getMessage();
+            if (payload == null || payload.isEmpty())
                 return;
 
-            Integer senderId = mensaje.getUserId();
-            String senderName = mensaje.getUserName();
+            try {
+                byte[] bytes = Base64.getDecoder().decode(payload);
+                ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+                BufferedImage img = ImageIO.read(bais);
+                if (img == null)
+                    return;
 
-            SwingUtilities.invokeLater(() -> updateVideoFeed(senderId, senderName, img));
-        } catch (Exception e) {
-            System.err.println("[-] Error al procesar CAMERA_FRAME: " + e.getMessage());
-        }
+                Integer senderId = mensaje.getUserId();
+                String senderName = mensaje.getUserName();
+
+                SwingUtilities.invokeLater(() -> updateVideoFeed(senderId, senderName, img));
+            } catch (Exception e) {
+                System.err.println("[-] Error al procesar CAMERA_FRAME: " + e.getMessage());
+            }
+        });
     }
 
     private void procesarEstadoCamara(MensajeSocket mensaje) {
@@ -860,6 +884,33 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         activeCameraStates.put(senderId, estado);
 
         SwingUtilities.invokeLater(() -> updateVideoState(senderId, senderName, estado));
+    }
+
+    private void procesarUsuarioSalio(MensajeSocket mensaje) {
+        if (mensaje == null)
+            return;
+        Integer leavingUserId = mensaje.getUserId();
+        if (leavingUserId == null)
+            return;
+
+        SwingUtilities.invokeLater(() -> {
+            JPanel panel = videoFeedPanels.remove(leavingUserId);
+            videoFeeds.remove(leavingUserId);
+            activeCameraStates.remove(leavingUserId);
+            if (panel != null) {
+                pnlVideoContainer.remove(panel);
+                pnlVideoContainer.revalidate();
+                pnlVideoContainer.repaint();
+            }
+        });
+    }
+
+    public static RoomFrame getActiveInstance() {
+        return activeInstance;
+    }
+
+    public void mostrarFrameLocal(BufferedImage img) {
+        SwingUtilities.invokeLater(() -> updateVideoFeed(this.userId, this.userName, img));
     }
 
     private void updateVideoFeed(Integer senderId, String senderName, BufferedImage img) {
@@ -1141,23 +1192,25 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     }
 
     private void procesarChunkDescarga(MensajeSocket mensaje) {
-        String payload = mensaje.getMessage();
-        if (payload == null || !payload.contains("|"))
-            return;
+        videoDecoderExecutor.submit(() -> {
+            String payload = mensaje.getMessage();
+            if (payload == null || !payload.contains("|"))
+                return;
 
-        String[] partes = payload.split("\\|", 2);
-        String rutaFisica = partes[0];
-        String chunkBase64 = partes[1];
+            String[] partes = payload.split("\\|", 2);
+            String rutaFisica = partes[0];
+            String chunkBase64 = partes[1];
 
-        java.io.FileOutputStream fos = descargasEnProgreso.get(rutaFisica);
-        if (fos != null) {
-            try {
-                byte[] bytes = Base64.getDecoder().decode(chunkBase64);
-                fos.write(bytes);
-            } catch (Exception e) {
-                System.err.println("[-] Error al escribir chunk de descarga: " + e.getMessage());
+            java.io.FileOutputStream fos = descargasEnProgreso.get(rutaFisica);
+            if (fos != null) {
+                try {
+                    byte[] bytes = Base64.getDecoder().decode(chunkBase64);
+                    fos.write(bytes);
+                } catch (Exception e) {
+                    System.err.println("[-] Error al escribir chunk de descarga: " + e.getMessage());
+                }
             }
-        }
+        });
     }
 
     private void procesarFinDescarga(MensajeSocket mensaje) {
@@ -1196,9 +1249,13 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         btnToggleCamera.setBackground(camaraActiva ? new Color(46, 204, 113) : new Color(192, 57, 43));
         if (roomCode != null) {
             if (camaraActiva) {
+                activeCameraStates.put(this.userId, "ON");
+                updateVideoState(this.userId, this.userName, "ON");
                 enviarEstadoCamara("ON");
                 startCameraSource();
             } else {
+                activeCameraStates.put(this.userId, "OFF");
+                updateVideoState(this.userId, this.userName, "OFF");
                 enviarEstadoCamara("OFF");
                 stopCameraSource();
             }
@@ -1276,5 +1333,26 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             cameraStream.stop();
             cameraStream = null;
         }
+    }
+
+    public void forzarFallbackASimulacion() {
+        SwingUtilities.invokeLater(() -> {
+            if (cameraStream != null) {
+                cameraStream.stop();
+            }
+            // Cambiar a simulado
+            CameraCreator simulatedCreator = new SimulatedCameraCreator();
+            cameraStream = simulatedCreator.createCamera(userId, userName, roomCode);
+            cameraStream.start();
+            System.out.println("[RoomFrame] Fallback forzado a cámara simulada debido a fallas consecutivas.");
+
+            // Alertar al usuario
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Se interrumpió la conexión con la cámara física debido a fallas continuas.\n" +
+                            "Se activará la cámara de simulación académica.",
+                    "Advertencia de Cámara",
+                    JOptionPane.WARNING_MESSAGE);
+        });
     }
 }
