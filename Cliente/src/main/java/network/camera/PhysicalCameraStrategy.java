@@ -37,18 +37,62 @@ public class PhysicalCameraStrategy implements CameraStrategy {
 
         try {
             // Timeout de 3000ms para evitar cuelgues indefinidos en DirectShow
-            webcam = Webcam.getDefault(3000);
-            if (webcam == null) {
+            java.util.List<Webcam> webcams = Webcam.getWebcams(3000);
+            if (webcams == null || webcams.isEmpty()) {
                 System.err.println("[-] [PhysicalCamera] No se encontró ninguna webcam física.");
                 return false;
             }
 
-            webcam.setViewSize(new java.awt.Dimension(width, height));
-            
-            // Abrir de forma síncrona para verificar si realmente se pudo inicializar la cámara
-            boolean opened = webcam.open();
+            System.out.println("[*] [PhysicalCamera] Listando webcams detectadas:");
+            for (Webcam w : webcams) {
+                System.out.println("  -> " + w.getName());
+            }
+
+            // Intentar abrir la primera cámara disponible que funcione (evitando IR/Hello o bloqueadas)
+            boolean opened = false;
+            for (Webcam w : webcams) {
+                // Saltar cámaras de infrarrojos (IR) si es posible por nombre
+                String nameLower = w.getName().toLowerCase();
+                if (nameLower.contains("ir camera") || nameLower.contains("hello") || nameLower.contains("virtual")) {
+                    System.out.println("[*] [PhysicalCamera] Saltando cámara sospechosa de ser IR/Virtual: " + w.getName());
+                    continue;
+                }
+                
+                System.out.println("[*] [PhysicalCamera] Intentando abrir: " + w.getName());
+                try {
+                    w.setViewSize(new java.awt.Dimension(width, height));
+                    if (w.open()) {
+                        webcam = w;
+                        opened = true;
+                        System.out.println("[+] [PhysicalCamera] Cámara abierta con éxito: " + w.getName());
+                        break;
+                    }
+                } catch (Throwable t) {
+                    System.err.println("[-] [PhysicalCamera] Error al abrir " + w.getName() + ": " + t.getMessage());
+                }
+            }
+
+            // Si ninguna funcionó con el filtro, intentar con cualquiera en la lista
             if (!opened) {
-                System.err.println("[-] [PhysicalCamera] No se pudo abrir la webcam física (open() retornó false).");
+                System.out.println("[*] [PhysicalCamera] Reintentando con todas las cámaras de la lista...");
+                for (Webcam w : webcams) {
+                    System.out.println("[*] [PhysicalCamera] Intentando abrir (segundo intento): " + w.getName());
+                    try {
+                        w.setViewSize(new java.awt.Dimension(width, height));
+                        if (w.open()) {
+                            webcam = w;
+                            opened = true;
+                            System.out.println("[+] [PhysicalCamera] Cámara abierta con éxito (segundo intento): " + w.getName());
+                            break;
+                        }
+                    } catch (Throwable t) {
+                        System.err.println("[-] [PhysicalCamera] Error al abrir " + w.getName() + ": " + t.getMessage());
+                    }
+                }
+            }
+
+            if (!opened || webcam == null) {
+                System.err.println("[-] [PhysicalCamera] No se pudo abrir ninguna webcam física.");
                 return false;
             }
 
@@ -61,7 +105,7 @@ public class PhysicalCameraStrategy implements CameraStrategy {
             long period = 1000L / Math.max(1, fps);
             executor.scheduleAtFixedRate(this::tick, 0, period, TimeUnit.MILLISECONDS);
             return true;
-        } catch (Exception e) {
+        } catch (Throwable e) {
             System.err.println("[-] [PhysicalCamera] Error al iniciar la webcam: " + e.getMessage());
             stop();
             return false;
