@@ -47,7 +47,8 @@ public class ClienteConexion {
     public synchronized boolean conectar(String host, int puerto) {
         if (conectado) return true;
         try {
-            socket = new Socket(host, puerto);
+            socket = new Socket();
+            socket.connect(new java.net.InetSocketAddress(host, puerto), 2500);
             entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             salida = new PrintWriter(socket.getOutputStream(), true);
             conectado = true;
@@ -60,7 +61,7 @@ public class ClienteConexion {
             System.out.println("[+] ClienteConexion: Conectado a " + host + ":" + puerto);
             return true;
         } catch (Exception e) {
-            System.err.println("[-] ClienteConexion: Error de conexión: " + e.getMessage());
+            System.err.println("[-] ClienteConexion: Error de conexión a " + host + ":" + puerto + " - " + e.getMessage());
             return false;
         }
     }

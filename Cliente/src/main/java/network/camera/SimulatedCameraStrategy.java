@@ -97,6 +97,9 @@ public class SimulatedCameraStrategy implements CameraStrategy {
 
             g.dispose();
 
+            // Enviar el frame local a la vista previa del RoomFrame de manera instantánea
+            UI.RoomFrame.receiveLocalFrame(img);
+
             // Comprimir a JPG
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             ImageIO.write(img, "jpg", baos);

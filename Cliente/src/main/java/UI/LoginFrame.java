@@ -134,11 +134,17 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
     private void conectarAlServidor() {
         // Conexión asíncrona al iniciar
         new Thread(() -> {
-            boolean exito = ClienteConexion.getInstancia().conectar("172.17.148.85", 5000);
+            String partnerIp = "172.17.148.85";
+            System.out.println("[*] Intentando conectar al IP del compañero: " + partnerIp);
+            boolean exito = ClienteConexion.getInstancia().conectar(partnerIp, 5000);
+            if (!exito) {
+                System.out.println("[*] No se pudo conectar a " + partnerIp + ". Intentando conectar a localhost...");
+                exito = ClienteConexion.getInstancia().conectar("localhost", 5000);
+            }
             if (!exito) {
                 SwingUtilities.invokeLater(() -> {
                     JOptionPane.showMessageDialog(this,
-                            "No se pudo conectar al servidor. Enciéndalo primero.",
+                            "No se pudo conectar al servidor (" + partnerIp + " o localhost). Enciéndalo primero.",
                             "Error de Conexión",
                             JOptionPane.ERROR_MESSAGE);
                 });

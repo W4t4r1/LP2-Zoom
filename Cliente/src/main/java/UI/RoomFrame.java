@@ -61,9 +61,20 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     private JButton btnToggleCamera;
     private boolean camaraActiva = true;
     private java.util.Map<Integer, JLabel> videoFeeds = new ConcurrentHashMap<>();
-    private java.util.Map<Integer, JPanel> videoFeedPanels = new ConcurrentHashMap<>();
+    private java.util.Map<Integer, VideoCardPanel> videoFeedPanels = new ConcurrentHashMap<>();
     private final java.util.Map<Integer, String> activeCameraStates = new ConcurrentHashMap<>();
     private CameraStrategy cameraStream;
+    private static java.util.function.Consumer<BufferedImage> localFrameListener;
+
+    public static void setLocalFrameListener(java.util.function.Consumer<BufferedImage> listener) {
+        localFrameListener = listener;
+    }
+
+    public static void receiveLocalFrame(BufferedImage img) {
+        if (localFrameListener != null) {
+            localFrameListener.accept(img);
+        }
+    }
 
     private Gson gson;
     private java.util.Map<String, java.io.FileOutputStream> descargasEnProgreso = new java.util.concurrent.ConcurrentHashMap<>();
@@ -81,6 +92,13 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
         // Registrar oyente de red
         ClienteConexion.getInstancia().setListener(this);
+
+        // Registrar callback para recibir y procesar los fotogramas locales
+        RoomFrame.setLocalFrameListener(img -> {
+            SwingUtilities.invokeLater(() -> {
+                updateVideoFeed(userId, "Tú", img);
+            });
+        });
 
         // Desconectarse al cerrar la ventana
         addWindowListener(new WindowAdapter() {
@@ -399,23 +417,31 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
         panel.add(pnlHeader, BorderLayout.NORTH);
 
-        // Panel Central Dividido
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+        // Panel Central Dividido (Vertical para Cámaras arriba y Chat abajo)
+        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
         splitPane.setBackground(new Color(30, 30, 35));
         splitPane.setBorder(null);
-        splitPane.setDividerLocation(480);
-        splitPane.setResizeWeight(0.6);
+        splitPane.setDividerLocation(360);
+        splitPane.setResizeWeight(0.7);
 
-        // Lado Izquierdo: Video Grid
+        // Lado Superior: Video Grid
         pnlVideoGrid = new JPanel(new BorderLayout());
         pnlVideoGrid.setBackground(new Color(20, 20, 25));
         pnlVideoGrid.setBorder(new LineBorder(new Color(45, 45, 50), 1, true));
 
-        pnlVideoContainer = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
+        pnlVideoContainer = new JPanel();
         pnlVideoContainer.setOpaque(false);
-        pnlVideoGrid.add(pnlVideoContainer, BorderLayout.CENTER);
 
-        splitPane.setLeftComponent(pnlVideoGrid);
+        // Envolver en Scroll para cuando hay más de 4 participantes
+        JScrollPane scrollVideo = new JScrollPane(pnlVideoContainer);
+        scrollVideo.setBorder(null);
+        scrollVideo.setOpaque(false);
+        scrollVideo.getViewport().setOpaque(false);
+        scrollVideo.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollVideo.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        pnlVideoGrid.add(scrollVideo, BorderLayout.CENTER);
+
+        splitPane.setTopComponent(pnlVideoGrid);
 
         // Lado Derecho: Panel de Chat (Fase 4)
         JPanel pnlChat = new JPanel(new BorderLayout(5, 5));
@@ -487,7 +513,7 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
         pnlChat.add(pnlChatInput, BorderLayout.SOUTH);
 
-        splitPane.setRightComponent(pnlChat);
+        splitPane.setBottomComponent(pnlChat);
 
         panel.add(splitPane, BorderLayout.CENTER);
 
@@ -561,6 +587,11 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         cardLayout.show(mainContainer, "REUNION");
         activeCameraStates.clear(); // Limpiar estados de cámara anteriores
 
+        // Crear e inicializar el panel de video local del usuario
+        getOrCreateFeedLabel(userId, "Tú");
+        updateVideoState(userId, "Tú", camaraActiva ? "ON" : "OFF");
+        actualizarLayoutVideoGrid();
+
         // Enviar solicitud de historial de chat al servidor
         MensajeSocket requestMsg = new MensajeSocket();
         requestMsg.setType("CHAT_MESSAGE");
@@ -606,6 +637,16 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
                 stopCameraSource();
             } catch (Exception ex) {
                 System.err.println("[-] Error al detener la cámara: " + ex.getMessage());
+            }
+
+            // Limpiar la cuadrícula de videos y estados al salir
+            videoFeedPanels.clear();
+            videoFeeds.clear();
+            activeCameraStates.clear();
+            if (pnlVideoContainer != null) {
+                pnlVideoContainer.removeAll();
+                pnlVideoContainer.revalidate();
+                pnlVideoContainer.repaint();
             }
         }
     }
@@ -668,6 +709,10 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
             case "CAMERA_STATE":
                 procesarEstadoCamara(mensaje);
+                break;
+
+            case "USER_LEFT":
+                procesarUsuarioSalio(mensaje);
                 break;
 
             case "GET_FILES_RESPONSE":
@@ -866,77 +911,47 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         if (senderId == null)
             return;
 
-        // Si el estado de la cámara del remitente es OFF, ignorar el frame para evitar
-        // condiciones de carrera
         String estado = activeCameraStates.get(senderId);
-        if ("OFF".equalsIgnoreCase(estado)) {
+        if ("OFF".equalsIgnoreCase(estado) && senderId != userId) {
             return;
         }
 
-        JLabel lbl = getOrCreateFeedLabel(senderId, senderName);
-        if (lbl == null)
-            return;
+        VideoCardPanel panel = videoFeedPanels.get(senderId);
+        if (panel == null) {
+            getOrCreateFeedLabel(senderId, senderName);
+            panel = videoFeedPanels.get(senderId);
+        }
 
-        ImageIcon icon = new ImageIcon(img.getScaledInstance(320, 240, Image.SCALE_SMOOTH));
-        lbl.setIcon(icon);
-        lbl.setText("");
-
-        JPanel panel = videoFeedPanels.get(senderId);
         if (panel != null) {
-            panel.setBackground(new Color(20, 20, 25));
+            panel.setFrame(img);
         }
     }
 
     private void updateVideoState(Integer senderId, String senderName, String estado) {
-        JLabel lbl = getOrCreateFeedLabel(senderId, senderName);
-        if (lbl == null)
-            return;
+        VideoCardPanel panel = videoFeedPanels.get(senderId);
+        if (panel == null) {
+            getOrCreateFeedLabel(senderId, senderName);
+            panel = videoFeedPanels.get(senderId);
+        }
 
-        JPanel panel = videoFeedPanels.get(senderId);
         if (panel != null) {
-            if ("OFF".equalsIgnoreCase(estado)) {
-                panel.setBackground(Color.BLACK);
-                lbl.setIcon(null);
-                lbl.setText("Cámara apagada");
-                lbl.setForeground(Color.WHITE);
-                lbl.setFont(new Font("Segoe UI", Font.BOLD, 16));
-            } else {
-                panel.setBackground(new Color(20, 20, 25));
-                lbl.setText("");
-            }
+            panel.setCamaraState("ON".equalsIgnoreCase(estado));
         }
     }
 
     private JLabel getOrCreateFeedLabel(Integer senderId, String senderName) {
-        JLabel lbl = videoFeeds.get(senderId);
-        JPanel panel = videoFeedPanels.get(senderId);
+        VideoCardPanel panel = videoFeedPanels.get(senderId);
 
         if (panel == null) {
-            panel = new JPanel(new BorderLayout());
-            panel.setPreferredSize(new Dimension(320, 240));
-            panel.setBackground(new Color(20, 20, 25));
-            panel.setBorder(BorderFactory.createLineBorder(new Color(70, 70, 80), 1, true));
-
-            lbl = new JLabel();
-            lbl.setHorizontalAlignment(JLabel.CENTER);
-            lbl.setVerticalAlignment(JLabel.CENTER);
-            lbl.setForeground(Color.WHITE);
-            lbl.setFont(new Font("Segoe UI", Font.BOLD, 14));
-            panel.add(lbl, BorderLayout.CENTER);
-
-            JLabel nameLbl = new JLabel(senderName != null ? senderName : ("User " + senderId), JLabel.CENTER);
-            nameLbl.setForeground(Color.WHITE);
-            nameLbl.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-            panel.add(nameLbl, BorderLayout.SOUTH);
-
-            pnlVideoContainer.add(panel);
-            videoFeeds.put(senderId, lbl);
+            String displayName = senderId == userId ? "Tú" : (senderName != null ? senderName : ("User " + senderId));
+            panel = new VideoCardPanel(senderId, displayName);
             videoFeedPanels.put(senderId, panel);
-            pnlVideoContainer.revalidate();
-            pnlVideoContainer.repaint();
+            videoFeeds.put(senderId, panel.getLabelImagen());
+            
+            actualizarLayoutVideoGrid();
         }
 
-        return lbl;
+        return panel.getLabelImagen();
     }
 
     @Override
@@ -1275,6 +1290,282 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         if (cameraStream != null) {
             cameraStream.stop();
             cameraStream = null;
+        }
+    }
+
+    private void procesarUsuarioSalio(MensajeSocket mensaje) {
+        Integer leftId = mensaje.getUserId();
+        if (leftId != null) {
+            SwingUtilities.invokeLater(() -> {
+                videoFeeds.remove(leftId);
+                JPanel panel = videoFeedPanels.remove(leftId);
+                if (panel != null) {
+                    pnlVideoContainer.remove(panel);
+                }
+                activeCameraStates.remove(leftId);
+                actualizarLayoutVideoGrid();
+            });
+        }
+    }
+
+    private void actualizarLayoutVideoGrid() {
+        pnlVideoContainer.removeAll();
+        int count = videoFeedPanels.size();
+
+        if (count == 0) {
+            pnlVideoContainer.setLayout(new GridBagLayout());
+            JLabel lblEmpty = new JLabel("Esperando a otros participantes...", JLabel.CENTER);
+            lblEmpty.setForeground(Color.LIGHT_GRAY);
+            lblEmpty.setFont(new Font("Segoe UI", Font.ITALIC, 14));
+            pnlVideoContainer.add(lblEmpty);
+        } else if (count == 1) {
+            pnlVideoContainer.setLayout(new GridLayout(1, 1, 10, 10));
+            pnlVideoContainer.setPreferredSize(null);
+            for (VideoCardPanel panel : videoFeedPanels.values()) {
+                pnlVideoContainer.add(panel);
+            }
+        } else if (count == 2) {
+            pnlVideoContainer.setLayout(new GridLayout(1, 2, 10, 10));
+            pnlVideoContainer.setPreferredSize(null);
+            for (VideoCardPanel panel : videoFeedPanels.values()) {
+                pnlVideoContainer.add(panel);
+            }
+        } else if (count <= 4) {
+            pnlVideoContainer.setLayout(new GridLayout(2, 2, 10, 10));
+            pnlVideoContainer.setPreferredSize(null);
+            for (VideoCardPanel panel : videoFeedPanels.values()) {
+                pnlVideoContainer.add(panel);
+            }
+        } else {
+            // Más de 4 participantes: cuadrícula adaptable con scroll vertical
+            int rows = (int) Math.ceil(count / 2.0);
+            pnlVideoContainer.setLayout(new GridLayout(rows, 2, 10, 10));
+            int gridHeight = rows * 200;
+            pnlVideoContainer.setPreferredSize(new Dimension(pnlVideoGrid.getWidth() - 20, gridHeight));
+            for (VideoCardPanel panel : videoFeedPanels.values()) {
+                pnlVideoContainer.add(panel);
+            }
+        }
+
+        pnlVideoContainer.revalidate();
+        pnlVideoContainer.repaint();
+    }
+
+    // --- CLASE PERSONALIZADA PARA LA TARJETA DE VIDEO MODERNIZADA ---
+    private class VideoCardPanel extends JPanel {
+        private final int cardUserId;
+        private final String cardUserName;
+        private boolean camaraOn = false;
+        private JLabel labelImagen;
+        private JLabel labelNombre;
+        private JPanel indicatorCamara;
+        private JLabel labelPlaceholder;
+        private JPanel contentPanel;
+        private float alpha = 0.0f;
+
+        public VideoCardPanel(int userId, String userName) {
+            this.cardUserId = userId;
+            this.cardUserName = userName;
+
+            setLayout(new BorderLayout());
+            setOpaque(false);
+            setBackground(new Color(25, 25, 30));
+
+            // Contenedor del video o el avatar
+            contentPanel = new JPanel(new BorderLayout());
+            contentPanel.setOpaque(false);
+
+            labelImagen = new JLabel();
+            labelImagen.setHorizontalAlignment(JLabel.CENTER);
+            labelImagen.setVerticalAlignment(JLabel.CENTER);
+
+            labelPlaceholder = new JLabel(getInitials(userName), JLabel.CENTER) {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    Graphics2D g2d = (Graphics2D) g.create();
+                    g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g2d.setColor(new Color(52, 152, 219));
+                    int size = Math.min(getWidth(), getHeight()) / 3;
+                    if (size < 50) size = 50;
+                    int x = (getWidth() - size) / 2;
+                    int y = (getHeight() - size) / 2;
+                    g2d.fillOval(x, y, size, size);
+                    g2d.dispose();
+                    super.paintComponent(g);
+                }
+            };
+            labelPlaceholder.setFont(new Font("Segoe UI", Font.BOLD, 28));
+            labelPlaceholder.setForeground(Color.WHITE);
+            labelPlaceholder.setOpaque(false);
+
+            contentPanel.add(labelPlaceholder, BorderLayout.CENTER);
+
+            // Panel inferior con nombre e indicador
+            JPanel pnlInfo = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4)) {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    Graphics2D g2d = (Graphics2D) g.create();
+                    g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g2d.setColor(new Color(0, 0, 0, 160)); // Fondo negro semitransparente
+                    g2d.fillRoundRect(0, 0, getWidth(), getHeight(), 10, 10);
+                    g2d.dispose();
+                }
+            };
+            pnlInfo.setOpaque(false);
+            pnlInfo.setBorder(new EmptyBorder(2, 6, 2, 6));
+
+            indicatorCamara = new JPanel() {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    Graphics2D g2d = (Graphics2D) g.create();
+                    g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g2d.setColor(camaraOn ? new Color(46, 204, 113) : new Color(192, 57, 43));
+                    g2d.fillOval(0, 0, getWidth(), getHeight());
+                    g2d.dispose();
+                }
+            };
+            indicatorCamara.setPreferredSize(new Dimension(8, 8));
+            indicatorCamara.setOpaque(false);
+            pnlInfo.add(indicatorCamara);
+
+            labelNombre = new JLabel(userName);
+            labelNombre.setFont(new Font("Segoe UI", Font.BOLD, 11));
+            labelNombre.setForeground(Color.WHITE);
+            pnlInfo.add(labelNombre);
+
+            // Capa de superposición para ubicar el tag abajo a la izquierda
+            JLayeredPane layeredPane = new JLayeredPane();
+            layeredPane.setLayout(new LayoutManager() {
+                @Override
+                public void addLayoutComponent(String name, Component comp) {}
+                @Override
+                public void removeLayoutComponent(Component comp) {}
+                @Override
+                public Dimension preferredLayoutSize(Container parent) { return new Dimension(320, 240); }
+                @Override
+                public Dimension minimumLayoutSize(Container parent) { return new Dimension(160, 120); }
+                @Override
+                public void layoutContainer(Container parent) {
+                    int w = parent.getWidth();
+                    int h = parent.getHeight();
+                    contentPanel.setBounds(0, 0, w, h);
+                    Dimension infoSize = pnlInfo.getPreferredSize();
+                    pnlInfo.setBounds(10, h - infoSize.height - 10, infoSize.width, infoSize.height);
+                }
+            });
+
+            layeredPane.add(contentPanel, JLayeredPane.DEFAULT_LAYER);
+            layeredPane.add(pnlInfo, JLayeredPane.PALETTE_LAYER);
+
+            add(layeredPane, BorderLayout.CENTER);
+
+            // Animación suave de aparición (Fade-In)
+            Timer fadeTimer = new Timer(20, new java.awt.event.ActionListener() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    alpha += 0.08f;
+                    if (alpha >= 1.0f) {
+                        alpha = 1.0f;
+                        ((Timer) e.getSource()).stop();
+                    }
+                    repaint();
+                }
+            });
+            fadeTimer.start();
+        }
+
+        private String getInitials(String name) {
+            if (name == null || name.trim().isEmpty()) return "?";
+            String cleaned = name.replaceAll("(?i)\\b(Tú|User)\\b", "").trim();
+            if (cleaned.isEmpty()) cleaned = name;
+            String[] parts = cleaned.split("\\s+");
+            if (parts.length == 1) return parts[0].substring(0, Math.min(2, parts[0].length())).toUpperCase();
+            return (parts[0].substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2d = (Graphics2D) g.create();
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha));
+
+            // Dibujar fondo de tarjeta
+            g2d.setColor(getBackground());
+            g2d.fillRoundRect(0, 0, getWidth(), getHeight(), 20, 20);
+
+            // Borde verde si el participante tiene cámara activa, o gris de lo contrario
+            if (camaraOn) {
+                g2d.setColor(new Color(46, 204, 113, 120));
+                g2d.setStroke(new BasicStroke(2));
+                g2d.drawRoundRect(1, 1, getWidth() - 2, getHeight() - 2, 20, 20);
+            } else {
+                g2d.setColor(new Color(55, 55, 60));
+                g2d.setStroke(new BasicStroke(1));
+                g2d.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 20, 20);
+            }
+            g2d.dispose();
+        }
+
+        @Override
+        protected void paintChildren(Graphics g) {
+            Graphics2D g2d = (Graphics2D) g.create();
+            g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha));
+            super.paintChildren(g2d);
+            g2d.dispose();
+        }
+
+        public JLabel getLabelImagen() {
+            return labelImagen;
+        }
+
+        public void setFrame(BufferedImage img) {
+            camaraOn = true;
+
+            // Retirar el placeholder si está visible
+            if (labelPlaceholder.getParent() != null) {
+                contentPanel.remove(labelPlaceholder);
+            }
+            
+            // Si labelImagen no está agregado al contentPanel, agregarlo
+            Container contentParent = labelImagen.getParent();
+            if (contentParent == null) {
+                contentPanel.add(labelImagen, BorderLayout.CENTER);
+            }
+
+            int w = getWidth();
+            int h = getHeight();
+            if (w <= 0) w = 320;
+            if (h <= 0) h = 240;
+
+            Image scaled = img.getScaledInstance(w, h, Image.SCALE_SMOOTH);
+            labelImagen.setIcon(new ImageIcon(scaled));
+            labelImagen.setText("");
+
+            indicatorCamara.repaint();
+            repaint();
+        }
+
+        public void setCamaraState(boolean active) {
+            this.camaraOn = active;
+
+            if (!active) {
+                // Ocultar video e inicializar placeholder
+                contentPanel.remove(labelImagen);
+                contentPanel.add(labelPlaceholder, BorderLayout.CENTER);
+                labelImagen.setIcon(null);
+            } else {
+                // Mostrar "Esperando video..." si no hay frame aún
+                if (labelImagen.getIcon() == null) {
+                    contentPanel.remove(labelPlaceholder);
+                    contentPanel.add(labelImagen, BorderLayout.CENTER);
+                    labelImagen.setText("Esperando video...");
+                    labelImagen.setFont(new Font("Segoe UI", Font.ITALIC, 14));
+                    labelImagen.setForeground(Color.LIGHT_GRAY);
+                }
+            }
+            indicatorCamara.repaint();
+            revalidate();
+            repaint();
         }
     }
 }

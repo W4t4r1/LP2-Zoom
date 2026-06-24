@@ -96,6 +96,9 @@ public class PhysicalCameraStrategy implements CameraStrategy {
             BufferedImage img = tempWebcam.getImage();
             if (img == null) return;
 
+            // Enviar el frame local a la vista previa del RoomFrame de manera instantánea
+            UI.RoomFrame.receiveLocalFrame(img);
+
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             ImageIO.write(img, "jpg", baos);
             String base64 = Base64.getEncoder().encodeToString(baos.toByteArray());

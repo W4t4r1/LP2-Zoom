@@ -370,6 +370,15 @@ public class ManejadorCliente implements Runnable {
         MainServidor.database.actualizarEstadoSolicitud(this.roomCode, this.userId, "RECHAZADO");
         
         String codigoSalida = this.roomCode;
+        
+        // Notificar a los demás que el usuario salió (USER_LEFT)
+        MensajeSocket leftMsg = new MensajeSocket();
+        leftMsg.setType("USER_LEFT");
+        leftMsg.setRoomCode(codigoSalida);
+        leftMsg.setUserId(this.userId);
+        leftMsg.setUserName(this.userName);
+        MainServidor.retransmitirMensaje(leftMsg, this.userId);
+        
         this.roomCode = null;
 
         // Notificar a los demás que el usuario abandonó
@@ -493,6 +502,15 @@ public class ManejadorCliente implements Runnable {
                     MainServidor.retransmitirMensaje(camOffMsg, this.userId);
 
                     MainServidor.database.actualizarEstadoSolicitud(this.roomCode, this.userId, "RECHAZADO");
+
+                    // Notificar a los demás que el usuario salió (USER_LEFT)
+                    MensajeSocket leftMsg = new MensajeSocket();
+                    leftMsg.setType("USER_LEFT");
+                    leftMsg.setRoomCode(this.roomCode);
+                    leftMsg.setUserId(this.userId);
+                    leftMsg.setUserName(this.userName);
+                    MainServidor.retransmitirMensaje(leftMsg, this.userId);
+
                     MensajeSocket alerta = new MensajeSocket("CHAT_MESSAGE", this.roomCode, 0, "SISTEMA", this.userName + " se ha desconectado.", null);
                     MainServidor.retransmitirMensaje(alerta, null);
                 }
