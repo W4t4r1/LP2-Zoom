@@ -134,7 +134,7 @@ public class LoginFrame extends JFrame implements ClienteConexion.MensajeListene
     private void conectarAlServidor() {
         // Conexión asíncrona al iniciar
         new Thread(() -> {
-            boolean exito = ClienteConexion.getInstancia().conectar("localhost", 5000);
+            boolean exito = ClienteConexion.getInstancia().conectar("172.17.148.85", 5000);
             if (!exito) {
                 SwingUtilities.invokeLater(() -> {
                     JOptionPane.showMessageDialog(this,
