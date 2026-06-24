@@ -52,11 +52,11 @@ Este método utiliza los archivos ya compilados (`bin_servidor` y `bin_cliente`)
 Abre una terminal y ejecuta el comando según tu consola:
 *   **En Windows (PowerShell):**
     ```powershell
-    java -cp "bin_servidor;$env:USERPROFILE\.m2\repository\org\postgresql\postgresql\42.7.4\postgresql-42.7.4.jar;$env:USERPROFILE\.m2\repository\com\google\code\gson\gson\2.10.1\gson-2.10.1.jar" network.MainServidor
+    java -cp "bin_servidor;Servidor/src/main/resources;$env:USERPROFILE\.m2\repository\org\postgresql\postgresql\42.7.4\postgresql-42.7.4.jar;$env:USERPROFILE\.m2\repository\com\google\code\gson\gson\2.10.1\gson-2.10.1.jar" network.MainServidor
     ```
 *   **En Windows (CMD / Command Prompt):**
     ```cmd
-    java -cp "bin_servidor;%USERPROFILE%\.m2\repository\org\postgresql\postgresql\42.7.4\postgresql-42.7.4.jar;%USERPROFILE%\.m2\repository\com\google\code\gson\gson\2.10.1\gson-2.10.1.jar" network.MainServidor
+    java -cp "bin_servidor;Servidor/src/main/resources;%USERPROFILE%\.m2\repository\org\postgresql\postgresql\42.7.4\postgresql-42.7.4.jar;%USERPROFILE%\.m2\repository\com\google\code\gson\gson\2.10.1\gson-2.10.1.jar" network.MainServidor
     ```
 
 #### 2. Iniciar Clientes
