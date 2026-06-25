@@ -54,15 +54,16 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
     // --- CARD 4: Panel de Reunión Activa (Meeting View) ---
     private JLabel lblTituloReunion;
-    private JTextArea txtAreaChat;
+    private JPanel pnlChatMessages;
+    private JScrollPane scrollChat;
+    private Component chatFiller;
     private JTextField txtMensajeChat;
     private JButton btnEnviarChat;
     private JPanel pnlVideoGrid;
     private JPanel pnlVideoContainer;
     private JButton btnToggleCamera;
     private boolean camaraActiva = false;
-    private java.util.Map<Integer, JLabel> videoFeeds = new ConcurrentHashMap<>();
-    private java.util.Map<Integer, JPanel> videoFeedPanels = new ConcurrentHashMap<>();
+    private java.util.Map<Integer, VideoFeedPanel> videoFeedPanels = new ConcurrentHashMap<>();
     private final java.util.Map<Integer, String> activeCameraStates = new ConcurrentHashMap<>();
     private CameraStrategy cameraStream;
 
@@ -364,15 +365,15 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
     // =========================================================================
     private void inicializarPantallaReunion() {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
-        panel.setBackground(new Color(30, 30, 35)); // Fondo Oscuro Premium (Estilo Zoom)
+        panel.setBackground(new Color(30, 31, 34)); // Fondo Oscuro Premium (Estilo Zoom)
         panel.setBorder(new EmptyBorder(15, 15, 15, 15));
 
         // Header Superior
         JPanel pnlHeader = new JPanel(new BorderLayout());
-        pnlHeader.setBackground(new Color(40, 40, 45));
+        pnlHeader.setBackground(new Color(43, 45, 49));
         pnlHeader.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(new Color(55, 55, 60), 1, true),
-                new EmptyBorder(10, 15, 10, 15)));
+                BorderFactory.createLineBorder(new Color(55, 57, 62), 1, true),
+                BorderFactory.createEmptyBorder(10, 15, 10, 15)));
 
         lblTituloReunion = new JLabel("Sala de Reunión Activa: Código ------");
         lblTituloReunion.setFont(new Font("Segoe UI", Font.BOLD, 18));
@@ -382,17 +383,25 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         JPanel pnlHeaderButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         pnlHeaderButtons.setOpaque(false);
 
-        JButton btnArchivos = new JButton("📂 Archivos");
-        btnArchivos.setBackground(new Color(41, 128, 185));
+        JButton btnArchivos = new JButton("📁 Archivos");
+        btnArchivos.setBackground(new Color(45, 140, 255)); // Zoom Blue
         btnArchivos.setForeground(Color.WHITE);
         btnArchivos.setFont(new Font("Segoe UI", Font.BOLD, 12));
         btnArchivos.setFocusPainted(false);
         btnArchivos.setCursor(new Cursor(Cursor.HAND_CURSOR));
         btnArchivos.addActionListener(e -> solicitarListaArchivos());
+        btnArchivos.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                btnArchivos.setBackground(new Color(65, 155, 255));
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                btnArchivos.setBackground(new Color(45, 140, 255));
+            }
+        });
         pnlHeaderButtons.add(btnArchivos);
 
-        btnToggleCamera = new JButton("Cámara: OFF");
-        btnToggleCamera.setBackground(new Color(192, 57, 43));
+        btnToggleCamera = new JButton("📹 Cámara: OFF");
+        btnToggleCamera.setBackground(new Color(237, 66, 69)); // Rojo Zoom
         btnToggleCamera.setForeground(Color.WHITE);
         btnToggleCamera.setFont(new Font("Segoe UI", Font.BOLD, 12));
         btnToggleCamera.setFocusPainted(false);
@@ -400,13 +409,21 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         btnToggleCamera.addActionListener(e -> toggleCamera());
         pnlHeaderButtons.add(btnToggleCamera);
 
-        JButton btnSalir = new JButton("Abandonar Sala");
-        btnSalir.setBackground(new Color(192, 57, 43));
+        JButton btnSalir = new JButton("🚪 Abandonar Sala");
+        btnSalir.setBackground(new Color(237, 66, 69)); // Rojo Zoom
         btnSalir.setForeground(Color.WHITE);
         btnSalir.setFont(new Font("Segoe UI", Font.BOLD, 12));
         btnSalir.setFocusPainted(false);
         btnSalir.setCursor(new Cursor(Cursor.HAND_CURSOR));
         btnSalir.addActionListener(e -> abandonarReunion());
+        btnSalir.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                btnSalir.setBackground(new Color(253, 92, 95));
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                btnSalir.setBackground(new Color(237, 66, 69));
+            }
+        });
         pnlHeaderButtons.add(btnSalir);
 
         pnlHeader.add(pnlHeaderButtons, BorderLayout.EAST);
@@ -415,53 +432,54 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
         // Panel Central Dividido
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
-        splitPane.setBackground(new Color(30, 30, 35));
+        splitPane.setBackground(new Color(30, 31, 34));
         splitPane.setBorder(null);
         splitPane.setDividerLocation(480);
         splitPane.setResizeWeight(0.6);
 
         // Lado Izquierdo: Video Grid
         pnlVideoGrid = new JPanel(new BorderLayout());
-        pnlVideoGrid.setBackground(new Color(20, 20, 25));
-        pnlVideoGrid.setBorder(new LineBorder(new Color(45, 45, 50), 1, true));
+        pnlVideoGrid.setBackground(new Color(30, 31, 34));
+        pnlVideoGrid.setBorder(new LineBorder(new Color(55, 57, 62), 1, true));
 
         pnlVideoContainer = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
-        pnlVideoContainer.setOpaque(false);
-        pnlVideoGrid.add(pnlVideoContainer, BorderLayout.CENTER);
+        pnlVideoContainer.setBackground(new Color(23, 23, 28));
+        
+        JScrollPane scrollVideo = new JScrollPane(pnlVideoContainer);
+        scrollVideo.setBorder(null);
+        scrollVideo.getVerticalScrollBar().setUnitIncrement(16);
+        pnlVideoGrid.add(scrollVideo, BorderLayout.CENTER);
 
         splitPane.setLeftComponent(pnlVideoGrid);
 
         // Lado Derecho: Panel de Chat (Fase 4)
         JPanel pnlChat = new JPanel(new BorderLayout(5, 5));
-        pnlChat.setBackground(new Color(40, 40, 45));
+        pnlChat.setBackground(new Color(43, 45, 49));
         pnlChat.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(new Color(45, 45, 50), 1, true),
+                new LineBorder(new Color(55, 57, 62), 1, true),
                 new EmptyBorder(10, 10, 10, 10)));
 
-        txtAreaChat = new JTextArea();
-        txtAreaChat.setEditable(false);
-        txtAreaChat.setBackground(new Color(50, 50, 55));
-        txtAreaChat.setForeground(Color.WHITE);
-        txtAreaChat.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        txtAreaChat.setLineWrap(true);
-        txtAreaChat.setWrapStyleWord(true);
+        pnlChatMessages = new JPanel();
+        pnlChatMessages.setLayout(new BoxLayout(pnlChatMessages, BoxLayout.Y_AXIS));
+        pnlChatMessages.setBackground(new Color(43, 45, 49));
 
-        JScrollPane scrollChat = new JScrollPane(txtAreaChat);
+        scrollChat = new JScrollPane(pnlChatMessages);
         scrollChat.setBorder(null);
+        scrollChat.getVerticalScrollBar().setUnitIncrement(12);
         pnlChat.add(scrollChat, BorderLayout.CENTER);
 
         // Footer del Chat (Input)
         JPanel pnlChatInput = new JPanel(new BorderLayout(5, 0));
-        pnlChatInput.setBackground(new Color(40, 40, 45));
+        pnlChatInput.setBackground(new Color(43, 45, 49));
 
         txtMensajeChat = new JTextField();
-        txtMensajeChat.setBackground(new Color(30, 30, 35));
+        txtMensajeChat.setBackground(new Color(30, 31, 34));
         txtMensajeChat.setForeground(Color.WHITE);
         txtMensajeChat.setCaretColor(Color.WHITE);
         txtMensajeChat.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         txtMensajeChat.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(new Color(55, 55, 60), 1, true),
-                new EmptyBorder(5, 8, 5, 8)));
+                new LineBorder(new Color(60, 63, 65), 1, true),
+                new EmptyBorder(8, 12, 8, 12)));
         txtMensajeChat.addActionListener(e -> enviarMensajeChat());
         txtMensajeChat.addKeyListener(new java.awt.event.KeyAdapter() {
             @Override
@@ -482,21 +500,43 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         pnlChatInput.add(txtMensajeChat, BorderLayout.CENTER);
 
         JButton btnAdjuntar = new JButton("📎");
-        btnAdjuntar.setBackground(new Color(127, 140, 141));
-        btnAdjuntar.setForeground(Color.WHITE);
-        btnAdjuntar.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        btnAdjuntar.setToolTipText("Compartir archivo");
+        btnAdjuntar.setBackground(new Color(43, 45, 49));
+        btnAdjuntar.setForeground(Color.LIGHT_GRAY);
+        btnAdjuntar.setFont(new Font("Segoe UI", Font.PLAIN, 16));
         btnAdjuntar.setFocusPainted(false);
         btnAdjuntar.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnAdjuntar.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
         btnAdjuntar.addActionListener(e -> seleccionarYSubirArchivo());
+        btnAdjuntar.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                btnAdjuntar.setBackground(new Color(55, 57, 62));
+                btnAdjuntar.setForeground(Color.WHITE);
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                btnAdjuntar.setBackground(new Color(43, 45, 49));
+                btnAdjuntar.setForeground(Color.LIGHT_GRAY);
+            }
+        });
         pnlChatInput.add(btnAdjuntar, BorderLayout.WEST);
 
-        btnEnviarChat = new JButton("Enviar");
-        btnEnviarChat.setBackground(new Color(41, 128, 185));
+        btnEnviarChat = new JButton("📤");
+        btnEnviarChat.setToolTipText("Enviar mensaje");
+        btnEnviarChat.setBackground(new Color(45, 140, 255));
         btnEnviarChat.setForeground(Color.WHITE);
-        btnEnviarChat.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        btnEnviarChat.setFont(new Font("Segoe UI", Font.PLAIN, 16));
         btnEnviarChat.setFocusPainted(false);
         btnEnviarChat.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnEnviarChat.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
         btnEnviarChat.addActionListener(e -> enviarMensajeChat());
+        btnEnviarChat.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                btnEnviarChat.setBackground(new Color(65, 155, 255));
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                btnEnviarChat.setBackground(new Color(45, 140, 255));
+            }
+        });
         pnlChatInput.add(btnEnviarChat, BorderLayout.EAST);
 
         pnlChat.add(pnlChatInput, BorderLayout.SOUTH);
@@ -506,6 +546,145 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         panel.add(splitPane, BorderLayout.CENTER);
 
         mainContainer.add(panel, "REUNION");
+    }
+
+    private void agregarMensajeAlChat(String remitente, int remitenteId, String texto, String hora) {
+        boolean esPropio = (remitenteId == this.userId);
+        
+        JPanel rowPanel = new JPanel(new FlowLayout(esPropio ? FlowLayout.RIGHT : FlowLayout.LEFT, 10, 5));
+        rowPanel.setOpaque(false);
+        
+        if ("SISTEMA".equalsIgnoreCase(remitente)) {
+            JPanel sysRow = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 5));
+            sysRow.setOpaque(false);
+            
+            JPanel bubble = new JPanel();
+            bubble.setBackground(new Color(60, 60, 65));
+            bubble.setBorder(BorderFactory.createEmptyBorder(5, 12, 5, 12));
+            
+            JLabel lblTexto = new JLabel(texto);
+            lblTexto.setFont(new Font("Segoe UI", Font.ITALIC, 11));
+            lblTexto.setForeground(Color.LIGHT_GRAY);
+            bubble.add(lblTexto);
+            
+            sysRow.add(bubble);
+            
+            if (chatFiller != null) pnlChatMessages.remove(chatFiller);
+            pnlChatMessages.add(sysRow);
+            chatFiller = Box.createVerticalGlue();
+            pnlChatMessages.add(chatFiller);
+            
+            pnlChatMessages.revalidate();
+            pnlChatMessages.repaint();
+            
+            // Auto scroll
+            SwingUtilities.invokeLater(() -> {
+                JScrollBar vertical = scrollChat.getVerticalScrollBar();
+                vertical.setValue(vertical.getMaximum());
+            });
+            return;
+        }
+
+        // Burbuja de mensaje
+        JPanel bubble = new JPanel();
+        bubble.setLayout(new BoxLayout(bubble, BoxLayout.Y_AXIS));
+        bubble.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+        
+        if (esPropio) {
+            bubble.setBackground(new Color(45, 140, 255)); // Zoom Blue
+        } else {
+            bubble.setBackground(new Color(60, 63, 65)); // Dark Gray Card
+        }
+        
+        // Si no es propio, agregamos el nombre del remitente arriba
+        if (!esPropio) {
+            JLabel lblRemitente = new JLabel(remitente);
+            lblRemitente.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            lblRemitente.setForeground(new Color(152, 170, 236)); // Color llamativo
+            bubble.add(lblRemitente);
+            bubble.add(Box.createRigidArea(new Dimension(0, 3)));
+        }
+        
+        // Contenido del mensaje con Wrap de texto automático en JLabel
+        JLabel lblTexto = new JLabel("<html><p style='width: 150px;'>" + texto.replace("\n", "<br>") + "</p></html>");
+        lblTexto.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        lblTexto.setForeground(Color.WHITE);
+        bubble.add(lblTexto);
+        bubble.add(Box.createRigidArea(new Dimension(0, 3)));
+        
+        // Hora
+        JLabel lblHora = new JLabel(hora != null && !hora.isEmpty() ? hora : obtenerHoraActual());
+        lblHora.setFont(new Font("Segoe UI", Font.PLAIN, 9));
+        lblHora.setForeground(esPropio ? new Color(200, 220, 255) : Color.LIGHT_GRAY);
+        lblHora.setAlignmentX(Component.RIGHT_ALIGNMENT);
+        bubble.add(lblHora);
+        
+        // Si no es propio, añadir avatar con inicial
+        if (!esPropio) {
+            JPanel pnlAvatar = new JPanel() {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    super.paintComponent(g);
+                    Graphics2D g2 = (Graphics2D) g;
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g2.setColor(new Color(114, 137, 218)); // Azul Discord
+                    g2.fillOval(0, 0, 32, 32);
+                    g2.setColor(Color.WHITE);
+                    g2.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                    String inicial = remitente.substring(0, Math.min(2, remitente.length())).toUpperCase();
+                    FontMetrics fm = g2.getFontMetrics();
+                    int x = (32 - fm.stringWidth(inicial)) / 2;
+                    int y = ((32 - fm.getHeight()) / 2) + fm.getAscent();
+                    g2.drawString(inicial, x, y);
+                }
+            };
+            pnlAvatar.setPreferredSize(new Dimension(32, 32));
+            pnlAvatar.setOpaque(false);
+            rowPanel.add(pnlAvatar);
+        }
+        
+        rowPanel.add(bubble);
+        
+        // Remover el filler viejo antes de agregar el mensaje, luego agregar el filler nuevo al final
+        if (chatFiller != null) {
+            pnlChatMessages.remove(chatFiller);
+        }
+        pnlChatMessages.add(rowPanel);
+        chatFiller = Box.createVerticalGlue();
+        pnlChatMessages.add(chatFiller);
+        
+        pnlChatMessages.revalidate();
+        pnlChatMessages.repaint();
+        
+        // Hacer scroll automático al final
+        SwingUtilities.invokeLater(() -> {
+            JScrollBar vertical = scrollChat.getVerticalScrollBar();
+            vertical.setValue(vertical.getMaximum());
+        });
+    }
+
+    private String formatearHora(String timestamp) {
+        if (timestamp == null || timestamp.isEmpty()) {
+            return obtenerHoraActual();
+        }
+        try {
+            if (timestamp.contains(" ")) {
+                String horaParte = timestamp.split(" ")[1];
+                if (horaParte.contains(":")) {
+                    String[] partes = horaParte.split(":");
+                    return partes[0] + ":" + partes[1];
+                }
+            }
+        } catch (Exception e) {
+            // Ignorar y retornar original
+        }
+        return timestamp;
+    }
+
+    private String obtenerHoraActual() {
+        java.time.LocalTime ahora = java.time.LocalTime.now();
+        java.time.format.DateTimeFormatter dtf = java.time.format.DateTimeFormatter.ofPattern("HH:mm");
+        return ahora.format(dtf);
     }
 
     // =========================================================================
@@ -566,12 +745,14 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
         ClienteConexion.getInstancia().enviarMensaje(msg);
         btnIniciarReunion.setEnabled(false);
-        txtAreaChat.append("[SISTEMA] Petición de inicio de reunión enviada. Esperando confirmación...\n");
+        agregarMensajeAlChat("SISTEMA", 0, "Petición de inicio de reunión enviada. Esperando confirmación...", null);
     }
 
     private void entrarAReunion() {
         lblTituloReunion.setText("Sala de Reunión Activa: Código " + roomCode);
-        txtAreaChat.setText(""); // Limpiar chat previo para evitar duplicados
+        pnlChatMessages.removeAll();
+        pnlChatMessages.revalidate();
+        pnlChatMessages.repaint();
         cardLayout.show(mainContainer, "REUNION");
         activeCameraStates.clear(); // Limpiar estados de cámara anteriores
 
@@ -604,7 +785,9 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
     private void abandonarReunion() {
         salirDeSalaActual();
-        txtAreaChat.setText(""); // Limpiar chat
+        pnlChatMessages.removeAll();
+        pnlChatMessages.revalidate();
+        pnlChatMessages.repaint();
         cardLayout.show(mainContainer, "SELECTOR");
     }
 
@@ -842,10 +1025,9 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
         SwingUtilities.invokeLater(() -> {
             String remitente = mensaje.getUserName();
             String texto = mensaje.getMessage();
-            txtAreaChat.append("[" + remitente + "]: " + texto + "\n");
-
-            // Auto-scroll al final del chat
-            txtAreaChat.setCaretPosition(txtAreaChat.getDocument().getLength());
+            int remitenteId = mensaje.getUserId() != null ? mensaje.getUserId() : 0;
+            String hora = formatearHora(mensaje.getSentAt());
+            agregarMensajeAlChat(remitente, remitenteId, texto, hora);
         });
     }
 
@@ -895,7 +1077,6 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
         SwingUtilities.invokeLater(() -> {
             JPanel panel = videoFeedPanels.remove(leavingUserId);
-            videoFeeds.remove(leavingUserId);
             activeCameraStates.remove(leavingUserId);
             if (panel != null) {
                 pnlVideoContainer.remove(panel);
@@ -924,70 +1105,34 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
             return;
         }
 
-        JLabel lbl = getOrCreateFeedLabel(senderId, senderName);
-        if (lbl == null)
-            return;
-
-        ImageIcon icon = new ImageIcon(img.getScaledInstance(320, 240, Image.SCALE_SMOOTH));
-        lbl.setIcon(icon);
-        lbl.setText("");
-
-        JPanel panel = videoFeedPanels.get(senderId);
+        VideoFeedPanel panel = getOrCreateVideoPanel(senderId, senderName);
         if (panel != null) {
-            panel.setBackground(new Color(20, 20, 25));
+            panel.setFrame(img);
         }
     }
 
     private void updateVideoState(Integer senderId, String senderName, String estado) {
-        JLabel lbl = getOrCreateFeedLabel(senderId, senderName);
-        if (lbl == null)
-            return;
-
-        JPanel panel = videoFeedPanels.get(senderId);
+        VideoFeedPanel panel = getOrCreateVideoPanel(senderId, senderName);
         if (panel != null) {
-            if ("OFF".equalsIgnoreCase(estado)) {
-                panel.setBackground(Color.BLACK);
-                lbl.setIcon(null);
-                lbl.setText("Cámara apagada");
-                lbl.setForeground(Color.WHITE);
-                lbl.setFont(new Font("Segoe UI", Font.BOLD, 16));
-            } else {
-                panel.setBackground(new Color(20, 20, 25));
-                lbl.setText("");
-            }
+            panel.setCameraState(estado);
         }
     }
 
-    private JLabel getOrCreateFeedLabel(Integer senderId, String senderName) {
-        JLabel lbl = videoFeeds.get(senderId);
-        JPanel panel = videoFeedPanels.get(senderId);
-
+    private VideoFeedPanel getOrCreateVideoPanel(Integer senderId, String senderName) {
+        VideoFeedPanel panel = videoFeedPanels.get(senderId);
         if (panel == null) {
-            panel = new JPanel(new BorderLayout());
-            panel.setPreferredSize(new Dimension(320, 240));
-            panel.setBackground(new Color(20, 20, 25));
-            panel.setBorder(BorderFactory.createLineBorder(new Color(70, 70, 80), 1, true));
+            panel = new VideoFeedPanel(senderId, senderName);
+            videoFeedPanels.put(senderId, panel);
 
-            lbl = new JLabel();
-            lbl.setHorizontalAlignment(JLabel.CENTER);
-            lbl.setVerticalAlignment(JLabel.CENTER);
-            lbl.setForeground(Color.WHITE);
-            lbl.setFont(new Font("Segoe UI", Font.BOLD, 14));
-            panel.add(lbl, BorderLayout.CENTER);
-
-            JLabel nameLbl = new JLabel(senderName != null ? senderName : ("User " + senderId), JLabel.CENTER);
-            nameLbl.setForeground(Color.WHITE);
-            nameLbl.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-            panel.add(nameLbl, BorderLayout.SOUTH);
+            // Sincronizar con el estado de cámara conocido actual
+            String currentState = activeCameraStates.getOrDefault(senderId, "OFF");
+            panel.setCameraState(currentState);
 
             pnlVideoContainer.add(panel);
-            videoFeeds.put(senderId, lbl);
-            videoFeedPanels.put(senderId, panel);
             pnlVideoContainer.revalidate();
             pnlVideoContainer.repaint();
         }
-
-        return lbl;
+        return panel;
     }
 
     @Override
@@ -1088,94 +1233,153 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
             // Crear el diálogo modal para ver los archivos
             JDialog dialog = new JDialog(this, "Archivos Compartidos", true);
-            dialog.setSize(550, 350);
+            dialog.setSize(600, 450);
             dialog.setLocationRelativeTo(this);
-            dialog.setLayout(new BorderLayout(10, 10));
+            dialog.setResizable(false);
 
-            JPanel pnlCentral = new JPanel(new BorderLayout(5, 5));
-            pnlCentral.setBorder(new EmptyBorder(10, 10, 10, 10));
+            JPanel pnlMain = new JPanel(new BorderLayout(15, 15));
+            pnlMain.setBackground(new Color(30, 31, 34)); // #1E1F22
+            pnlMain.setBorder(new EmptyBorder(20, 20, 20, 20));
 
-            JLabel lblTitulo = new JLabel("Lista de Archivos de esta Sala:");
-            lblTitulo.setFont(new Font("Segoe UI", Font.BOLD, 14));
-            pnlCentral.add(lblTitulo, BorderLayout.NORTH);
+            JLabel lblTitulo = new JLabel("Archivos Compartidos en la Sala:");
+            lblTitulo.setFont(new Font("Segoe UI", Font.BOLD, 16));
+            lblTitulo.setForeground(Color.WHITE);
+            pnlMain.add(lblTitulo, BorderLayout.NORTH);
 
-            // Tabla de archivos
-            String[] columnas = { "Archivo", "Compartido por", "Fecha" };
-            Object[][] datos = new Object[archivos.size()][3];
-            for (int i = 0; i < archivos.size(); i++) {
-                Map<String, Object> arch = archivos.get(i);
-                datos[i][0] = arch.get("nombreArchivo");
-                datos[i][1] = arch.get("nombres");
-                datos[i][2] = arch.get("fechaSubida");
+            JPanel pnlListaArchivos = new JPanel();
+            pnlListaArchivos.setLayout(new BoxLayout(pnlListaArchivos, BoxLayout.Y_AXIS));
+            pnlListaArchivos.setBackground(new Color(30, 31, 34)); // #1E1F22
+
+            if (archivos == null || archivos.isEmpty()) {
+                JLabel lblVacio = new JLabel("No se ha compartido ningún archivo en esta sala.", JLabel.CENTER);
+                lblVacio.setFont(new Font("Segoe UI", Font.ITALIC, 14));
+                lblVacio.setForeground(Color.GRAY);
+                lblVacio.setAlignmentX(Component.CENTER_ALIGNMENT);
+                pnlListaArchivos.add(Box.createVerticalGlue());
+                pnlListaArchivos.add(lblVacio);
+                pnlListaArchivos.add(Box.createVerticalGlue());
+            } else {
+                for (Map<String, Object> arch : archivos) {
+                    String nombreArchivo = (String) arch.get("nombreArchivo");
+                    String rutaFisica = (String) arch.get("rutaArchivo");
+                    String usuarioSubida = (String) arch.get("nombres");
+                    String fechaSubida = (String) arch.get("fechaSubida");
+
+                    JPanel card = new JPanel(new BorderLayout(15, 10));
+                    card.setBackground(new Color(43, 45, 49)); // #2B2D31
+                    card.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createLineBorder(new Color(60, 63, 65), 1, true),
+                            BorderFactory.createEmptyBorder(10, 15, 10, 15)));
+                    card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 70));
+                    card.setPreferredSize(new Dimension(0, 70));
+
+                    // Determinar extensión e icono coloreado
+                    String ext = "";
+                    int dotIdx = nombreArchivo.lastIndexOf('.');
+                    if (dotIdx > 0) {
+                        ext = nombreArchivo.substring(dotIdx + 1).toLowerCase();
+                    }
+
+                    String emoji = "📁";
+                    Color colorIcono = new Color(140, 140, 140); // Gris genérico
+
+                    if ("pdf".equals(ext)) {
+                        emoji = "📄";
+                        colorIcono = new Color(237, 66, 69); // Rojo PDF
+                    } else if ("xls".equals(ext) || "xlsx".equals(ext) || "csv".equals(ext)) {
+                        emoji = "📊";
+                        colorIcono = new Color(59, 165, 92); // Verde Excel
+                    } else if ("doc".equals(ext) || "docx".equals(ext) || "txt".equals(ext)) {
+                        emoji = "📝";
+                        colorIcono = new Color(45, 140, 255); // Azul Word
+                    } else if ("png".equals(ext) || "jpg".equals(ext) || "jpeg".equals(ext) || "gif".equals(ext) || "bmp".equals(ext)) {
+                        emoji = "🖼️";
+                        colorIcono = new Color(155, 89, 182); // Morado/Púrpura Imagen
+                    }
+
+                    JLabel lblIcono = new JLabel(emoji, JLabel.CENTER);
+                    lblIcono.setFont(new Font("Segoe UI", Font.PLAIN, 28));
+                    lblIcono.setForeground(colorIcono);
+                    lblIcono.setPreferredSize(new Dimension(40, 40));
+                    card.add(lblIcono, BorderLayout.WEST);
+
+                    JPanel pnlInfo = new JPanel(new GridLayout(2, 1, 2, 2));
+                    pnlInfo.setOpaque(false);
+
+                    JLabel lblNombreArch = new JLabel(nombreArchivo);
+                    lblNombreArch.setFont(new Font("Segoe UI", Font.BOLD, 13));
+                    lblNombreArch.setForeground(Color.WHITE);
+
+                    JLabel lblMeta = new JLabel("Compartido por: " + usuarioSubida + " • " + fechaSubida);
+                    lblMeta.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+                    lblMeta.setForeground(Color.LIGHT_GRAY);
+
+                    pnlInfo.add(lblNombreArch);
+                    pnlInfo.add(lblMeta);
+                    card.add(pnlInfo, BorderLayout.CENTER);
+
+                    JButton btnDescargar = new JButton("⬇ Descargar");
+                    btnDescargar.setFont(new Font("Segoe UI", Font.BOLD, 11));
+                    btnDescargar.setBackground(new Color(45, 140, 255)); // Zoom Blue
+                    btnDescargar.setForeground(Color.WHITE);
+                    btnDescargar.setFocusPainted(false);
+                    btnDescargar.setCursor(new Cursor(Cursor.HAND_CURSOR));
+                    btnDescargar.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
+
+                    btnDescargar.addMouseListener(new java.awt.event.MouseAdapter() {
+                        public void mouseEntered(java.awt.event.MouseEvent evt) {
+                            btnDescargar.setBackground(new Color(65, 155, 255));
+                        }
+                        public void mouseExited(java.awt.event.MouseEvent evt) {
+                            btnDescargar.setBackground(new Color(45, 140, 255));
+                        }
+                    });
+
+                    btnDescargar.addActionListener(e -> {
+                        // Solicitar destino de guardado
+                        JFileChooser saveChooser = new JFileChooser();
+                        saveChooser.setSelectedFile(new java.io.File(nombreArchivo));
+                        saveChooser.setDialogTitle("Guardar archivo descargado");
+
+                        if (saveChooser.showSaveDialog(dialog) == JFileChooser.APPROVE_OPTION) {
+                            java.io.File destFile = saveChooser.getSelectedFile();
+                            try {
+                                java.io.FileOutputStream fos = new java.io.FileOutputStream(destFile);
+                                descargasEnProgreso.put(rutaFisica, fos);
+
+                                // Enviar solicitud de descarga
+                                MensajeSocket downloadReq = new MensajeSocket();
+                                downloadReq.setType("FILE_DOWNLOAD_REQUEST");
+                                downloadReq.setRoomCode(roomCode);
+                                downloadReq.setUserId(userId);
+                                downloadReq.setUserName(userName);
+                                downloadReq.setMessage(rutaFisica);
+                                ClienteConexion.getInstancia().enviarMensaje(downloadReq);
+
+                                JOptionPane.showMessageDialog(dialog, "Iniciando descarga de '" + nombreArchivo + "'...",
+                                        "Descarga en curso", JOptionPane.INFORMATION_MESSAGE);
+                                dialog.dispose();
+
+                            } catch (Exception ex) {
+                                JOptionPane.showMessageDialog(dialog, "Error al preparar archivo local: " + ex.getMessage(),
+                                        "Error", JOptionPane.ERROR_MESSAGE);
+                            }
+                        }
+                    });
+
+                    card.add(btnDescargar, BorderLayout.EAST);
+                    pnlListaArchivos.add(card);
+                    pnlListaArchivos.add(Box.createRigidArea(new Dimension(0, 10)));
+                }
             }
 
-            JTable tabla = new JTable(datos, columnas) {
-                public boolean isCellEditable(int row, int column) {
-                    return false;
-                }
-            };
-            tabla.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-            tabla.setRowHeight(25);
-            JScrollPane scroll = new JScrollPane(tabla);
-            pnlCentral.add(scroll, BorderLayout.CENTER);
+            JScrollPane scroll = new JScrollPane(pnlListaArchivos);
+            scroll.setBorder(null);
+            scroll.getVerticalScrollBar().setUnitIncrement(12);
+            scroll.getViewport().setBackground(new Color(30, 31, 34)); // #1E1F22
+            pnlMain.add(scroll, BorderLayout.CENTER);
 
-            dialog.add(pnlCentral, BorderLayout.CENTER);
-
-            // Footer con botón de descarga
-            JPanel pnlFooter = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
-            JButton btnDescargar = new JButton("Descargar Seleccionado");
-            btnDescargar.setFont(new Font("Segoe UI", Font.BOLD, 12));
-            btnDescargar.setBackground(new Color(39, 174, 96));
-            btnDescargar.setForeground(Color.WHITE);
-            btnDescargar.setFocusPainted(false);
-            btnDescargar.setCursor(new Cursor(Cursor.HAND_CURSOR));
-
-            btnDescargar.addActionListener(e -> {
-                int filaSel = tabla.getSelectedRow();
-                if (filaSel == -1) {
-                    JOptionPane.showMessageDialog(dialog, "Seleccione un archivo de la lista.", "Selección requerida",
-                            JOptionPane.WARNING_MESSAGE);
-                    return;
-                }
-
-                Map<String, Object> archSel = archivos.get(filaSel);
-                String nombreArchivo = (String) archSel.get("nombreArchivo");
-                String rutaFisica = (String) archSel.get("rutaArchivo");
-
-                // Solicitar destino de guardado
-                JFileChooser saveChooser = new JFileChooser();
-                saveChooser.setSelectedFile(new java.io.File(nombreArchivo));
-                saveChooser.setDialogTitle("Guardar archivo descargado");
-
-                if (saveChooser.showSaveDialog(dialog) == JFileChooser.APPROVE_OPTION) {
-                    java.io.File destFile = saveChooser.getSelectedFile();
-                    try {
-                        java.io.FileOutputStream fos = new java.io.FileOutputStream(destFile);
-                        descargasEnProgreso.put(rutaFisica, fos);
-
-                        // Enviar solicitud de descarga
-                        MensajeSocket downloadReq = new MensajeSocket();
-                        downloadReq.setType("FILE_DOWNLOAD_REQUEST");
-                        downloadReq.setRoomCode(roomCode);
-                        downloadReq.setUserId(userId);
-                        downloadReq.setUserName(userName);
-                        downloadReq.setMessage(rutaFisica);
-                        ClienteConexion.getInstancia().enviarMensaje(downloadReq);
-
-                        JOptionPane.showMessageDialog(dialog, "Iniciando descarga de '" + nombreArchivo + "'...",
-                                "Descarga en curso", JOptionPane.INFORMATION_MESSAGE);
-                        dialog.dispose();
-
-                    } catch (Exception ex) {
-                        JOptionPane.showMessageDialog(dialog, "Error al preparar archivo local: " + ex.getMessage(),
-                                "Error", JOptionPane.ERROR_MESSAGE);
-                    }
-                }
-            });
-
-            pnlFooter.add(btnDescargar);
-            dialog.add(pnlFooter, BorderLayout.SOUTH);
-
+            dialog.getContentPane().add(pnlMain);
             dialog.setVisible(true);
         });
     }
@@ -1354,5 +1558,112 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
                     "Advertencia de Cámara",
                     JOptionPane.WARNING_MESSAGE);
         });
+    }
+
+    // =========================================================================
+    // COMPONENTE DE VIDEO FEED PERSONALIZADO (Estilo Moderno)
+    // =========================================================================
+    private class VideoFeedPanel extends JPanel {
+        private final Integer senderId;
+        private final String senderName;
+        private BufferedImage currentFrame;
+        private String cameraState = "OFF";
+
+        public VideoFeedPanel(Integer senderId, String senderName) {
+            this.senderId = senderId;
+            this.senderName = senderName;
+            setPreferredSize(new Dimension(320, 240));
+            setLayout(null); // Layout absoluto para overlays manuales
+            setBackground(new Color(30, 30, 35));
+            setBorder(BorderFactory.createLineBorder(new Color(55, 55, 60), 2, true));
+        }
+
+        public void setFrame(BufferedImage img) {
+            this.currentFrame = img;
+            this.cameraState = "ON";
+            repaint();
+        }
+
+        public void setCameraState(String state) {
+            this.cameraState = state;
+            if ("OFF".equalsIgnoreCase(state)) {
+                this.currentFrame = null;
+            }
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Graphics2D g2 = (Graphics2D) g;
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+
+            int w = getWidth();
+            int h = getHeight();
+
+            if ("ON".equalsIgnoreCase(cameraState) && currentFrame != null) {
+                // Dibujar el cuadro de video escalado para llenar
+                g2.drawImage(currentFrame, 0, 0, w, h, null);
+            } else {
+                // Dibujar fondo oscuro
+                g2.setColor(new Color(23, 23, 28));
+                g2.fillRect(0, 0, w, h);
+
+                // Dibujar avatar circular
+                int circleRadius = 60;
+                int cx = (w - circleRadius) / 2;
+                int cy = (h - circleRadius) / 2 - 10;
+                
+                g2.setColor(new Color(45, 140, 255, 40)); // Brillo semi-transparente
+                g2.fillOval(cx - 4, cy - 4, circleRadius + 8, circleRadius + 8);
+                
+                g2.setColor(new Color(45, 140, 255)); // Azul Zoom
+                g2.fillOval(cx, cy, circleRadius, circleRadius);
+
+                g2.setColor(Color.WHITE);
+                g2.setFont(new Font("Segoe UI", Font.BOLD, 22));
+                String initials = getInitials(senderName);
+                FontMetrics fm = g2.getFontMetrics();
+                int tx = cx + (circleRadius - fm.stringWidth(initials)) / 2;
+                int ty = cy + ((circleRadius - fm.getHeight()) / 2) + fm.getAscent();
+                g2.drawString(initials, tx, ty);
+
+                // Texto: Cámara apagada
+                g2.setColor(new Color(231, 76, 60)); // Rojo suave
+                g2.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                String statusText = "🔴 Cámara apagada";
+                FontMetrics fmStatus = g2.getFontMetrics();
+                int sx = (w - fmStatus.stringWidth(statusText)) / 2;
+                int sy = cy + circleRadius + 30;
+                g2.drawString(statusText, sx, sy);
+            }
+
+            // Dibujar overlay con nombre en la parte inferior
+            g2.setColor(new Color(0, 0, 0, 150)); // Fondo negro translúcido
+            g2.fillRoundRect(10, h - 35, w - 20, 25, 6, 6);
+
+            g2.setColor(Color.WHITE);
+            g2.setFont(new Font("Segoe UI", Font.BOLD, 11));
+            String nameText = senderName + (senderId.equals(userId) ? " (Tú)" : "");
+            FontMetrics fmName = g2.getFontMetrics();
+            int ny = h - 35 + ((25 - fmName.getHeight()) / 2) + fmName.getAscent();
+            g2.drawString(nameText, 20, ny);
+            
+            // Indicador de conexión verde si la cámara está activa
+            if ("ON".equalsIgnoreCase(cameraState)) {
+                g2.setColor(new Color(46, 204, 113)); // Verde activo
+                g2.fillOval(w - 25, h - 27, 8, 8);
+            }
+        }
+
+        private String getInitials(String name) {
+            if (name == null || name.isEmpty()) return "?";
+            String[] parts = name.split(" ");
+            if (parts.length >= 2) {
+                return (parts[0].substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
+            }
+            return name.substring(0, Math.min(2, name.length())).toUpperCase();
+        }
     }
 }
