@@ -1,33 +1,35 @@
 package network;
 
-import com.google.gson.Gson;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
-import java.util.ArrayList;
-import java.util.List;
 import model.MensajeSocket;
+import network.bridge.ProtocolBridge;
+import network.bridge.JSONProtocolBridge;
 
 public class ClienteConexion {
     private static ClienteConexion instancia;
     private Socket socket;
     private BufferedReader entrada;
     private PrintWriter salida;
-    private Gson gson;
     private Thread hiloEscucha;
     private boolean conectado = false;
+    private String hostActual;
 
-    // Interfaz para escuchar los mensajes del servidor
+    // Bridge Abstraction: Delegar serialización al implementador del Bridge
+    private final ProtocolBridge protocolBridge;
+
+    // Interfaz de callback simple para recibir mensajes
     public interface MensajeListener {
         void onMensajeRecibido(MensajeSocket mensaje);
         void onDesconexion();
     }
 
-    private final List<MensajeListener> listeners = new ArrayList<>();
+    private MensajeListener listener;
 
-    private ClienteConexion() {
-        this.gson = new Gson();
+    private ClienteConexion(ProtocolBridge bridge) {
+        this.protocolBridge = bridge;
     }
 
     /**
@@ -35,7 +37,7 @@ public class ClienteConexion {
      */
     public static synchronized ClienteConexion getInstancia() {
         if (instancia == null) {
-            instancia = new ClienteConexion();
+            instancia = new ClienteConexion(new JSONProtocolBridge());
         }
         return instancia;
     }
@@ -50,6 +52,7 @@ public class ClienteConexion {
             entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             salida = new PrintWriter(socket.getOutputStream(), true);
             conectado = true;
+            hostActual = host;
             
             // Iniciar hilo de escucha asíncrono para no congelar la UI
             hiloEscucha = new Thread(this::escucharServidor);
@@ -70,12 +73,13 @@ public class ClienteConexion {
             // Lectura continua de mensajes JSON enviados por el servidor
             while (conectado && (linea = entrada.readLine()) != null) {
                 try {
-                    MensajeSocket mensaje = gson.fromJson(linea, MensajeSocket.class);
+                    // Utiliza el Bridge para deserializar
+                    MensajeSocket mensaje = protocolBridge.deserialize(linea);
                     if (mensaje != null) {
-                        notificarListeners(mensaje);
+                        notificarListener(mensaje);
                     }
                 } catch (Exception e) {
-                    System.err.println("[-] ClienteConexion: Error al deserializar JSON: " + e.getMessage());
+                    System.err.println("[-] ClienteConexion: Error al deserializar datos: " + e.getMessage());
                 }
             }
         } catch (Exception e) {
@@ -91,6 +95,7 @@ public class ClienteConexion {
     public synchronized void desconectar() {
         if (!conectado) return;
         conectado = false;
+        hostActual = null;
         try {
             if (socket != null && !socket.isClosed()) {
                 socket.close();
@@ -99,7 +104,7 @@ public class ClienteConexion {
             System.err.println("[-] Error al cerrar socket: " + e.getMessage());
         }
         notificarDesconexion();
-        listeners.clear();
+        listener = null;
         System.out.println("[-] ClienteConexion: Desconectado del servidor.");
     }
 
@@ -112,38 +117,35 @@ public class ClienteConexion {
             return;
         }
         try {
-            String json = gson.toJson(mensaje);
-            salida.println(json);
+            // Utiliza el Bridge para serializar
+            String data = protocolBridge.serialize(mensaje);
+            salida.println(data);
         } catch (Exception e) {
             System.err.println("[-] ClienteConexion: Error al enviar: " + e.getMessage());
         }
     }
 
-    public synchronized void addListener(MensajeListener listener) {
-        if (!listeners.contains(listener)) {
-            listeners.add(listener);
-        }
+    public synchronized void setListener(MensajeListener listener) {
+        this.listener = listener;
     }
 
-    public synchronized void removeListener(MensajeListener listener) {
-        listeners.remove(listener);
-    }
-
-    private synchronized void notificarListeners(MensajeSocket mensaje) {
-        List<MensajeListener> copia = new ArrayList<>(listeners);
-        for (MensajeListener listener : copia) {
+    private synchronized void notificarListener(MensajeSocket mensaje) {
+        if (listener != null) {
             listener.onMensajeRecibido(mensaje);
         }
     }
 
     private synchronized void notificarDesconexion() {
-        List<MensajeListener> copia = new ArrayList<>(listeners);
-        for (MensajeListener listener : copia) {
+        if (listener != null) {
             listener.onDesconexion();
         }
     }
 
     public boolean isConectado() {
         return conectado;
+    }
+
+    public String getHostActual() {
+        return hostActual;
     }
 }

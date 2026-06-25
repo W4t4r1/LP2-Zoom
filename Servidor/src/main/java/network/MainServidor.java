@@ -1,5 +1,8 @@
 package network;
 
+import database.DBStrategy;
+import database.DBProxy;
+import database.SupabaseDBCreator;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -19,6 +22,9 @@ public class MainServidor {
 
     // Registro global de clientes autenticados activos (IdUsuario -> Manejador)
     public static final Map<Integer, ManejadorCliente> clientesActivos = new ConcurrentHashMap<>();
+
+    // Instancia global del Proxy de Base de Datos (Strategy + Factory Method + Proxy)
+    public static final DBStrategy database = new DBProxy(new SupabaseDBCreator());
 
     public static void main(String[] args) {
         System.out.println("=========================================");

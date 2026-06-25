@@ -19,24 +19,38 @@ El código fuente del Servidor se encuentra estructurado bajo los siguientes paq
 
 ```text
 Servidor/src/main/java/
-├── database/                   # Capa de Persistencia y Conectividad
+├── database/                   # Capa de Persistencia (Strategy + Factory Method + Proxy)
 │   ├── ConexionBD.java         # Proveedor estático de conexiones JDBC
-│   ├── DBService.java          # Métodos CRUD parametrizados con Supabase
+│   ├── DBStrategy.java         # Interfaz de estrategia para la persistencia
+│   ├── DBService.java          # Estrategia concreta que ejecuta SQL en Supabase (JDBC)
+│   ├── DBCreator.java          # Creador abstracto para Factory Method
+│   ├── SupabaseDBCreator.java  # Creador concreto para instanciar DBService
+│   ├── DBProxy.java            # Proxy controlador de acceso, logs y carga perezosa
 │   └── HashUtils.java          # Criptografía nativa (hashing SHA-256)
 ├── model/                      # Modelos de Datos compartidos
 │   ├── MensajeSocket.java      # Estructura del protocolo JSON de comunicación
 │   └── Usuario.java            # Datos del usuario autenticado
 └── network/                    # Capa de Comunicación por Red
-    ├── MainServidor.java       # Punto de entrada y loop principal ServerSocket
-    └── ManejadorCliente.java   # HiloRunnable que maneja el ciclo de vida de cada socket
+    ├── MainServidor.java       # Punto de entrada, instanciador del DBProxy y ServerSocket
+    └── ManejadorCliente.java   # HiloRunnable que procesa sockets delegando a MainServidor.database
 ```
 
 ---
 
 ## 3. Módulos y Lógica Principal
 
-### A. Servidor Escucha (MainServidor)
-El archivo [MainServidor](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Servidor/src/main/java/network/MainServidor.java) corre un bucle continuo de aceptación de sockets.
+### A. Capa de Base de Datos Desacoplada (Patrones de Diseño)
+El servidor no accede a `DBService` directamente. En su lugar, inicializa la persistencia a través de la interfaz de estrategia `DBStrategy` mediante la factoría y el proxy en [MainServidor](../Servidor/src/main/java/network/MainServidor.java):
+```java
+public static final DBStrategy database = new DBProxy(new SupabaseDBCreator());
+```
+
+El proxy ([DBProxy](../Servidor/src/main/java/database/DBProxy.java)) intercepta cada llamada de consulta realizada por el `ManejadorCliente` para:
+1. **Virtual Proxy:** Instanciar el objeto de base de datos JDBC real en el primer intento de llamada, retardando y protegiendo el uso de sockets y puertos.
+2. **Logging Proxy:** Imprimir automáticamente logs descriptivos en la consola de comandos de cada consulta en curso, facilitando la auditoría y depuración en caliente.
+
+### B. Servidor Escucha (MainServidor)
+El archivo [MainServidor](../Servidor/src/main/java/network/MainServidor.java) corre un bucle continuo de aceptación de sockets.
 
 ```java
 // Hilo principal que ejecuta el bucle de escucha del ServerSocket

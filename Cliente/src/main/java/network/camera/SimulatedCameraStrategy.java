@@ -1,6 +1,5 @@
-package network;
+package network.camera;
 
-import model.MensajeSocket;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;
@@ -13,42 +12,51 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import javax.imageio.ImageIO;
+import model.MensajeSocket;
+import network.ClienteConexion;
 
 /**
- * Simulador de cámara simple que genera imágenes dinámicas para pruebas.
- * Comprime a JPG, codifica en Base64 y envía `CAMERA_FRAME` por `ClienteConexion`.
+ * Estrategia de cámara que genera imágenes dinámicas de prueba en Swing (Concrete Strategy).
  */
-public class CameraSimulator {
+public class SimulatedCameraStrategy implements CameraStrategy {
     private final int userId;
     private final String userName;
     private final String roomCode;
     private final int width = 320;
     private final int height = 240;
-    private final int fps = 5; // frames por segundo
+    private final int fps = 5;
     private ScheduledExecutorService executor;
 
-    public CameraSimulator(int userId, String userName, String roomCode) {
+    public SimulatedCameraStrategy(int userId, String userName, String roomCode) {
         this.userId = userId;
         this.userName = userName;
         this.roomCode = roomCode;
     }
 
-    public void start() {
-        if (executor != null && !executor.isShutdown()) return;
+    @Override
+    public synchronized boolean start() {
+        if (executor != null && !executor.isShutdown()) return true;
         executor = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "CameraSimulator-" + userId);
+            Thread t = new Thread(r, "SimulatedCameraCapture-" + userId);
             t.setDaemon(true);
             return t;
         });
         long period = 1000L / Math.max(1, fps);
         executor.scheduleAtFixedRate(this::tick, 0, period, TimeUnit.MILLISECONDS);
+        return true;
     }
 
-    public void stop() {
+    @Override
+    public synchronized void stop() {
         if (executor != null) {
             executor.shutdownNow();
             executor = null;
         }
+    }
+
+    @Override
+    public synchronized boolean isActive() {
+        return executor != null && !executor.isShutdown();
     }
 
     private void tick() {
@@ -89,6 +97,12 @@ public class CameraSimulator {
 
             g.dispose();
 
+            // Renderizar localmente en la interfaz
+            UI.RoomFrame activeFrame = UI.RoomFrame.getActiveInstance();
+            if (activeFrame != null) {
+                activeFrame.mostrarFrameLocal(img);
+            }
+
             // Comprimir a JPG
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             ImageIO.write(img, "jpg", baos);
@@ -106,7 +120,7 @@ public class CameraSimulator {
             ClienteConexion.getInstancia().enviarMensaje(msg);
 
         } catch (Exception e) {
-            System.err.println("[-] CameraSimulator error: " + e.getMessage());
+            System.err.println("[-] [SimulatedCamera] Error: " + e.getMessage());
         }
     }
 }

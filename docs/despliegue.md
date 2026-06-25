@@ -15,7 +15,7 @@ Antes de iniciar el servidor y los clientes, asegúrese de contar con las siguie
 
 ## 2. Configuración de Variables y Propiedades
 
-El Servidor lee las credenciales de conectividad JDBC desde el archivo de configuración [config.properties](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Servidor/src/main/resources/config.properties). 
+El Servidor lee las credenciales de conectividad JDBC desde el archivo de configuración [config.properties](../Servidor/src/main/resources/config.properties). 
 
 ### Formato de Variables (Ejemplo de `config.properties`)
 Debe crearse un archivo en la ruta `Servidor/src/main/resources/config.properties` con los siguientes parámetros relacionales (use sus credenciales obtenidas desde la consola de Supabase):
@@ -37,7 +37,7 @@ db.password=your-database-password
 
 ## 3. Configuración de la Cadena de Conexión JDBC
 
-La conexión es provista por la clase [ConexionBD](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Servidor/src/main/java/database/ConexionBD.java). La cadena JDBC se arma dinámicamente forzando el uso de SSL para la seguridad de Supabase:
+La conexión es provista por la clase [ConexionBD](../Servidor/src/main/java/database/ConexionBD.java). La cadena JDBC se arma dinámicamente forzando el uso de SSL para la seguridad de Supabase:
 
 ```java
 // Construcción de la URL JDBC con SSL requerido para Supabase

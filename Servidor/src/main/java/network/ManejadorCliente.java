@@ -2,7 +2,7 @@ package network;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
-import database.DBService;
+import database.DBStrategy;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -97,6 +97,10 @@ public class ManejadorCliente implements Runnable {
                 ejecutarLogin(mensaje);
                 break;
 
+            case "REGISTER_REQUEST":
+                ejecutarRegistro(mensaje);
+                break;
+
             case "CREATE_ROOM":
                 ejecutarCrearSala(mensaje);
                 break;
@@ -160,7 +164,7 @@ public class ManejadorCliente implements Runnable {
         String password = mensaje.getMessage(); // Contraseña enviada en el campo mensaje
 
         System.out.println("[*] Intento de login para: " + correo);
-        Usuario usuario = DBService.login(correo, password);
+        Usuario usuario = MainServidor.database.login(correo, password);
 
         MensajeSocket respuesta = new MensajeSocket();
         respuesta.setType("LOGIN_RESPONSE");
@@ -183,6 +187,31 @@ public class ManejadorCliente implements Runnable {
         enviarMensaje(respuesta);
     }
 
+    private void ejecutarRegistro(MensajeSocket mensaje) {
+        String correo = mensaje.getUserName();
+        String password = mensaje.getMessage();
+        String nombres = mensaje.getFullName();
+
+        System.out.println("[*] Intento de registro para: " + correo);
+        MensajeSocket respuesta = new MensajeSocket();
+        respuesta.setType("REGISTER_RESPONSE");
+
+        if (MainServidor.database.existeCorreo(correo)) {
+            respuesta.setMessage("EMAIL_ALREADY_EXISTS");
+            System.out.println("[-] Registro fallido: el correo ya existe (" + correo + ")");
+        } else {
+            boolean exito = MainServidor.database.registrar(nombres, correo, password, "USUARIO");
+            if (exito) {
+                respuesta.setMessage("SUCCESS");
+                System.out.println("[OK] Registro exitoso para: " + correo);
+            } else {
+                respuesta.setMessage("ERROR: No se pudo insertar en la base de datos.");
+                System.out.println("[-] Error de base de datos al registrar: " + correo);
+            }
+        }
+        enviarMensaje(respuesta);
+    }
+
     private void ejecutarCrearSala(MensajeSocket mensaje) {
         if (this.userId == null) return;
 
@@ -191,7 +220,7 @@ public class ManejadorCliente implements Runnable {
         String codigoSala = UUID.randomUUID().toString().substring(0, 6).toUpperCase();
 
         System.out.println("[*] Creando sala " + codigoSala + " solicitada por Host ID: " + this.userId);
-        boolean creada = DBService.crearSala(codigoSala, nombreSala, this.userId);
+        boolean creada = MainServidor.database.crearSala(codigoSala, nombreSala, this.userId);
 
         MensajeSocket respuesta = new MensajeSocket();
         respuesta.setType("CREATE_ROOM");
@@ -199,7 +228,7 @@ public class ManejadorCliente implements Runnable {
         if (creada) {
             this.roomCode = codigoSala;
             // Registrar al anfitrión directamente como participante
-            DBService.agregarParticipante(codigoSala, this.userId);
+            MainServidor.database.agregarParticipante(codigoSala, this.userId);
             this.admittedToRoom = true;
             
             respuesta.setRoomCode(codigoSala);
@@ -218,7 +247,7 @@ public class ManejadorCliente implements Runnable {
         String codigo = mensaje.getRoomCode();
         System.out.println("[*] Usuario " + this.userName + " (ID: " + this.userId + ") solicita unirse a sala: " + codigo);
 
-        boolean registrada = DBService.solicitarUnirseASala(codigo, this.userId);
+        boolean registrada = MainServidor.database.solicitarUnirseASala(codigo, this.userId);
 
         MensajeSocket respuesta = new MensajeSocket();
         respuesta.setType("JOIN_ROOM_RESPONSE"); // o WAITING_ROOM_UPDATE para mantener la coherencia
@@ -250,7 +279,7 @@ public class ManejadorCliente implements Runnable {
         if (invitadoId == null || accion == null) return;
 
         // Verificar que quien lo solicita sea efectivamente el Host de la sala
-        int hostId = DBService.obtenerHostIdPorCodigo(codigo);
+        int hostId = MainServidor.database.obtenerHostIdPorCodigo(codigo);
         if (hostId != this.userId) {
             System.err.println("[WARNING] Intento no autorizado de admisión en sala " + codigo + " por usuario ID " + this.userId);
             return;
@@ -259,7 +288,7 @@ public class ManejadorCliente implements Runnable {
         String nuevoEstado = ("ACEPTADO".equalsIgnoreCase(accion) || "ACEPTAR".equalsIgnoreCase(accion)) ? "ACEPTADO" : "RECHAZADO";
         System.out.println("[*] Host (ID: " + this.userId + ") actualizó solicitud de Invitado ID: " + invitadoId + " a: " + nuevoEstado);
         
-        boolean ok = DBService.actualizarEstadoSolicitud(codigo, invitadoId, nuevoEstado);
+        boolean ok = MainServidor.database.actualizarEstadoSolicitud(codigo, invitadoId, nuevoEstado);
 
         if (ok) {
             // Notificar al Invitado sobre la decisión si está conectado
@@ -288,7 +317,7 @@ public class ManejadorCliente implements Runnable {
         if (this.userId == null) return;
 
         String codigo = mensaje.getRoomCode();
-        int hostId = DBService.obtenerHostIdPorCodigo(codigo);
+        int hostId = MainServidor.database.obtenerHostIdPorCodigo(codigo);
         if (hostId != this.userId) {
             System.err.println("[WARNING] Usuario ID " + this.userId + " intentó iniciar reunión sin ser host en sala " + codigo);
             return;
@@ -301,7 +330,7 @@ public class ManejadorCliente implements Runnable {
         notifHost.setMessage("STARTED");
         this.enviarMensaje(notifHost);
 
-        List<Integer> participantes = DBService.obtenerParticipantesActivos(codigo);
+        List<Integer> participantes = MainServidor.database.obtenerParticipantesActivos(codigo);
         for (Integer participanteId : participantes) {
             ManejadorCliente participante = MainServidor.clientesActivos.get(participanteId);
             if (participante != null) {
@@ -322,7 +351,7 @@ public class ManejadorCliente implements Runnable {
         // Si es una solicitud de historial, no la persistimos ni retransmitimos; enviamos los mensajes previos
         if ("REQUEST_HISTORY".equals(mensaje.getMessage())) {
             System.out.println("[CHAT] Solicitando historial de mensajes para sala: " + this.roomCode);
-            List<MensajeSocket> historial = DBService.obtenerHistorialMensajes(this.roomCode);
+            List<MensajeSocket> historial = MainServidor.database.obtenerHistorialMensajes(this.roomCode);
             for (MensajeSocket msg : historial) {
                 enviarMensaje(msg);
             }
@@ -332,7 +361,7 @@ public class ManejadorCliente implements Runnable {
         System.out.println("[CHAT] Mensaje recibido de " + this.userName + " en sala " + this.roomCode + ": " + mensaje.getMessage());
         
         // Guardar mensaje en base de datos
-        DBService.guardarMensaje(this.roomCode, this.userId, mensaje.getMessage());
+        MainServidor.database.guardarMensaje(this.roomCode, this.userId, mensaje.getMessage());
 
         // Retransmitir mensaje a todos los miembros activos en la sala
         MainServidor.retransmitirMensaje(mensaje, null);
@@ -357,6 +386,9 @@ public class ManejadorCliente implements Runnable {
 
         System.out.println("[-] Usuario " + this.userName + " sale de la sala " + this.roomCode);
         
+        // Retransmitir LEAVE_ROOM a los demás
+        MainServidor.retransmitirMensaje(mensaje, this.userId);
+        
         // Notificar estado de cámara OFF a los demás antes de salir
         MensajeSocket camOffMsg = new MensajeSocket();
         camOffMsg.setType("CAMERA_STATE");
@@ -367,7 +399,7 @@ public class ManejadorCliente implements Runnable {
         MainServidor.retransmitirMensaje(camOffMsg, this.userId);
 
         // Remover de la base de datos de participantes activos
-        DBService.actualizarEstadoSolicitud(this.roomCode, this.userId, "RECHAZADO");
+        MainServidor.database.actualizarEstadoSolicitud(this.roomCode, this.userId, "RECHAZADO");
         
         String codigoSalida = this.roomCode;
         this.roomCode = null;
@@ -441,7 +473,7 @@ public class ManejadorCliente implements Runnable {
                 System.out.println("[OK] Archivo recibido por completo: " + nombreArchivo);
 
                 // Guardar registro de archivo en base de datos
-                DBService.guardarArchivo(this.roomCode, this.userId, nombreArchivo, rutaFisica);
+                MainServidor.database.guardarArchivo(this.roomCode, this.userId, nombreArchivo, rutaFisica);
 
                 // Notificar en el chat sobre la disponibilidad del nuevo archivo
                 MensajeSocket alertaChat = new MensajeSocket();
@@ -459,11 +491,11 @@ public class ManejadorCliente implements Runnable {
     }
 
     private void notificarActualizacionSalaEspera(String codigoSala) {
-        int hostId = DBService.obtenerHostIdPorCodigo(codigoSala);
+        int hostId = MainServidor.database.obtenerHostIdPorCodigo(codigoSala);
         ManejadorCliente hostManejador = MainServidor.clientesActivos.get(hostId);
         
         if (hostManejador != null) {
-            List<Map<String, Object>> solicitudes = DBService.obtenerSolicitudesPendientes(codigoSala);
+            List<Map<String, Object>> solicitudes = MainServidor.database.obtenerSolicitudesPendientes(codigoSala);
             String jsonSolicitudes = gson.toJson(solicitudes);
             
             MensajeSocket notifHost = new MensajeSocket();
@@ -483,6 +515,14 @@ public class ManejadorCliente implements Runnable {
                 
                 // Si estaba en una sala, notificar
                 if (this.roomCode != null) {
+                    // Notificar LEAVE_ROOM a los demás
+                    MensajeSocket leaveMsg = new MensajeSocket();
+                    leaveMsg.setType("LEAVE_ROOM");
+                    leaveMsg.setRoomCode(this.roomCode);
+                    leaveMsg.setUserId(this.userId);
+                    leaveMsg.setUserName(this.userName);
+                    MainServidor.retransmitirMensaje(leaveMsg, this.userId);
+
                     // Notificar estado de cámara OFF a los demás por desconexión abrupta
                     MensajeSocket camOffMsg = new MensajeSocket();
                     camOffMsg.setType("CAMERA_STATE");
@@ -492,7 +532,7 @@ public class ManejadorCliente implements Runnable {
                     camOffMsg.setMessage("OFF");
                     MainServidor.retransmitirMensaje(camOffMsg, this.userId);
 
-                    DBService.actualizarEstadoSolicitud(this.roomCode, this.userId, "RECHAZADO");
+                    MainServidor.database.actualizarEstadoSolicitud(this.roomCode, this.userId, "RECHAZADO");
                     MensajeSocket alerta = new MensajeSocket("CHAT_MESSAGE", this.roomCode, 0, "SISTEMA", this.userName + " se ha desconectado.", null);
                     MainServidor.retransmitirMensaje(alerta, null);
                 }
@@ -508,7 +548,7 @@ public class ManejadorCliente implements Runnable {
     private void ejecutarListarArchivos(MensajeSocket mensaje) {
         if (this.userId == null || this.roomCode == null) return;
 
-        List<Map<String, Object>> archivos = DBService.obtenerArchivosCompartidos(this.roomCode);
+        List<Map<String, Object>> archivos = MainServidor.database.obtenerArchivosCompartidos(this.roomCode);
         String jsonArchivos = gson.toJson(archivos);
 
         MensajeSocket respuesta = new MensajeSocket();

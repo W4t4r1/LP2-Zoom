@@ -8,6 +8,7 @@ public class MensajeSocket {
     private String userName;
     private String message;
     private String sentAt;
+    private String fullName;
 
     // Constructor vacío obligatorio para la librería Gson
     public MensajeSocket() {
@@ -21,6 +22,17 @@ public class MensajeSocket {
         this.userName = userName;
         this.message = message;
         this.sentAt = sentAt;
+    }
+
+    // Constructor con fullName (para registro)
+    public MensajeSocket(String type, String roomCode, Integer userId, String userName, String message, String sentAt, String fullName) {
+        this.type = type;
+        this.roomCode = roomCode;
+        this.userId = userId;
+        this.userName = userName;
+        this.message = message;
+        this.sentAt = sentAt;
+        this.fullName = fullName;
     }
 
     // --- GETTERS Y SETTERS ---
@@ -41,4 +53,7 @@ public class MensajeSocket {
 
     public String getSentAt() { return sentAt; }
     public void setSentAt(String sentAt) { this.sentAt = sentAt; }
+
+    public String getFullName() { return fullName; }
+    public void setFullName(String fullName) { this.fullName = fullName; }
 }

@@ -66,4 +66,197 @@ sequenceDiagram
 
 *   **Pérdida de Conexión y Desconexiones Abruptas:** Al operar sobre sockets TCP nativos, una desconexión abrupta (caída de internet) puede dejar hilos bloqueados en el servidor en modo de lectura. Se mitiga mediante bloques `try-catch` en el bucle continuo del método `run()` de `ManejadorCliente` que detectan fallas físicas y disparan el método de limpieza `desconectar()`.
 *   **Latencia en Transmisión de Cámara (FPS Drop):** La codificación y decodificación de tramas Base64 a tasas altas de frames (FPS) saturan el procesador y aumentan la latencia de la red. Se mitiga configurando la captura de cámara a tasas reducidas (3 a 10 FPS) y comprimiendo las fotos a formato JPG de baja resolución (ej. 320x240).
+*   **Saturación y Bloqueo de Hilos en el Cliente:** Procesar fotogramas de video y E/S de descargas de forma síncrona en el hilo lector de red (`HiloEscuchaCliente`) bloqueaba el socket y degradaba el rendimiento del chat y la interfaz. Se mitiga delegando la decodificación Base64 y descompresión JPEG a un pool de hilos de segundo plano daemon (`videoDecoderExecutor`) en `RoomFrame.java`.
+*   **Conexiones JDBC Efímeras Lentas (Supabase Cloud Latency):** Crear conexiones JDBC individuales para cada consulta consecutiva añadía una latencia prohibitiva de varios segundos debido al handshake TCP/SSL de red con la nube de AWS Supabase. Se mitiga manteniendo un Singleton de la conexión física en `ConexionBD` envuelto por un **Proxy dinámico** de Java que descarta llamadas a `.close()`, garantizando hilo-seguridad mediante métodos `synchronized` en el proxy global `DBProxy`.
 *   **Saturación y Bloqueo de Hilos (Thread Exhaustion):** Si se manejara la creación manual de hilos (`new Thread`), el servidor podría colapsar ante cientos de conexiones. Se implementa un pool de hilos dinámico (`Executors.newCachedThreadPool()`) en el `MainServidor` que reutiliza hilos inactivos y limita el desbordamiento de recursos del sistema operativo.
+*   **Remoción de Paneles de Video Huérfanos al Salir:** Cuando un participante abandonaba la videoconferencia o se desconectaba abruptamente, su panel permanecía visible en pantalla (generalmente en negro o con el último frame congelado). Se mitiga implementando el evento `LEAVE_ROOM` retransmitido por el Servidor, el cual es procesado por cada Cliente para remover físicamente el panel de video (`JPanel` y `JLabel`) correspondiente al usuario que sale de la sala, revalidando el layout.
+*   **Congelamiento de Frame en Vista Emisor al Apagar Cámara:** Al apagar la cámara, la última imagen capturada permanecía renderizada de forma local. Se mitiga actualizando inmediatamente el estado local a `"OFF"` en el mapa `activeCameraStates` del emisor y llamando a `updateVideoState(userId, userName, "OFF")`, limpiando la imagen con una pantalla negra que indica "Cámara apagada".
+*   **Detección de Bloqueo de Cámara Física en Windows (DirectShow Lock):** En sistemas Windows, solo un proceso puede bloquear y leer de la cámara física. Si un segundo cliente (ej. pruebas locales de múltiples invitados) intentaba encender la cámara, Windows arrojaba errores persistentes de buffer (`buffer sizes do not match`) y congelamientos. Se mitiga haciendo que `PhysicalCameraStrategy` intente abrir y capturar un frame de prueba en un executor secundario con timeout de 2 segundos. Si el frame es nulo, se detecta el bloqueo y se descarta el dispositivo. Para evitar bucles repetitivos y retardos, implementamos un filtro que ignora dispositivos de audio/voz virtuales (como `"OMEN Cam  Voice 2"`) y registramos en caché las cámaras falladas para evitar reintentarlas en la misma sesión de inicio. Además, se removió la configuración manual de `setViewSize` en la inicialización nativa de la cámara —la cual causaba el error de mismatch de buffer en webcams integradas— realizando el escalado a `320x240` mediante procesamiento en memoria con `Graphics2D` antes de enviar las tramas por red.
+
+---
+
+## 5. Patrones de Diseño Aplicados
+
+Para estructurar la arquitectura del sistema de manera robusta, extensible y mantenible, se han implementado de forma simétrica en el **módulo Cliente (video)** y en el **módulo Servidor (base de datos)** los patrones **Strategy**, **Factory Method** y **Proxy**.
+
+### 5.1. Patrones de Diseño en el Módulo Cliente (Visor de Video)
+
+#### A. Patrón Strategy (Estrategia)
+Se utiliza para encapsular las diferentes formas de capturar y generar el flujo de video en la clase `RoomFrame`.
+- **Estructura:**
+  - [CameraStrategy](../Cliente/src/main/java/network/camera/CameraStrategy.java) (Interfaz): Define el contrato común (`start()`, `stop()`, `isActive()`).
+  - [PhysicalCameraStrategy](../Cliente/src/main/java/network/camera/PhysicalCameraStrategy.java) (Estrategia Concreta): Utiliza la webcam física del computador.
+  - [SimulatedCameraStrategy](../Cliente/src/main/java/network/camera/SimulatedCameraStrategy.java) (Estrategia Concreta): Dibuja formas dinámicas de prueba.
+- **Beneficio:** Permite alternar entre cámara física y simulador de forma intercambiable sin acoplar la UI a la tecnología de captura de video física.
+
+#### B. Patrón Factory Method (Método de Fábrica)
+Se encarga de delegar la creación física de las estrategias de cámara a creadores dedicados.
+- **Estructura:**
+  - [CameraCreator](../Cliente/src/main/java/network/camera/CameraCreator.java) (Creador Abstracto): Declara el método de fábrica `createCamera()`.
+  - [PhysicalCameraCreator](../Cliente/src/main/java/network/camera/PhysicalCameraCreator.java) (Creador Concreto): Produce objetos del tipo `PhysicalCameraStrategy`.
+  - [SimulatedCameraCreator](../Cliente/src/main/java/network/camera/SimulatedCameraCreator.java) (Creador Concreto): Produce objetos del tipo `SimulatedCameraStrategy`.
+- **Beneficio:** Desacopla la lógica de instanciación de las estrategias en `RoomFrame`, promoviendo el principio de inversión de dependencia.
+
+#### C. Patrón Proxy (Intermediario)
+Actúa como un representante/intermediario de la cámara, interceptando las operaciones y añadiendo comportamiento inteligente.
+- **Estructura:**
+  - [CameraProxy](../Cliente/src/main/java/network/camera/CameraProxy.java) (Implementa `CameraStrategy`): Envuelve al sujeto real (`PhysicalCameraStrategy` o `SimulatedCameraStrategy`).
+  - **Funciones del Proxy:**
+    1. **Protection Proxy (Control de Acceso):** Valida si la variable estática `permissionGranted` es verdadera antes de inicializar o encender la cámara.
+    2. **Virtual Proxy (Inicialización Perezosa):** Retarda la instanciación del dispositivo de video hasta que la UI invoque explícitamente `start()`.
+    3. **Logging Proxy (Logs de Red/Dispositivo):** Registra auditoría en consola cada vez que se llama a `start()` y `stop()`.
+    4. **Fallback Inteligente:** Si el inicio de la cámara física falla, el proxy automáticamente e internamente conmuta al simulador de forma transparente para `RoomFrame`.
+
+### Diagrama de Clases de Cámara (Mermaid)
+
+```mermaid
+classDiagram
+    class CameraStrategy {
+        <<interface>>
+        +start() boolean
+        +stop() void
+        +isActive() boolean
+    }
+    class PhysicalCameraStrategy {
+        -webcam Webcam
+        -executor ScheduledExecutorService
+        +start() boolean
+        +stop() void
+        +isActive() boolean
+    }
+    class SimulatedCameraStrategy {
+        -executor ScheduledExecutorService
+        +start() boolean
+        +stop() void
+        +isActive() boolean
+    }
+    class CameraProxy {
+        -userId int
+        -userName String
+        -roomCode String
+        -creator CameraCreator
+        -realSubject CameraStrategy
+        -permissionGranted boolean
+        +start() boolean
+        +stop() void
+        +isActive() boolean
+        +getRealSubject() CameraStrategy
+    }
+    class CameraCreator {
+        <<abstract>>
+        +createCamera(userId, userName, roomCode) CameraStrategy*
+    }
+    class PhysicalCameraCreator {
+        +createCamera(userId, userName, roomCode) CameraStrategy
+    }
+    class SimulatedCameraCreator {
+        +createCamera(userId, userName, roomCode) CameraStrategy
+    }
+
+    CameraStrategy <|.. PhysicalCameraStrategy
+    CameraStrategy <|.. SimulatedCameraStrategy
+    CameraStrategy <|.. CameraProxy
+    CameraProxy --> CameraStrategy : realSubject
+    CameraProxy --> CameraCreator : creator
+    CameraCreator <|-- PhysicalCameraCreator
+    CameraCreator <|-- SimulatedCameraCreator
+    PhysicalCameraCreator ..> PhysicalCameraStrategy : creates
+    SimulatedCameraCreator ..> SimulatedCameraStrategy : creates
+```
+
+---
+
+### 5.2. Patrones de Diseño en el Módulo Servidor (Persistencia y Base de Datos)
+
+Para aislar el acceso directo a Supabase PostgreSQL y añadir logs e inicialización diferida, se aplica la misma tríada de patrones en el backend:
+
+#### A. Patrón Strategy (Estrategia)
+Define la interfaz abstracta de operaciones de base de datos.
+- **Estructura:**
+  - [DBStrategy](../Servidor/src/main/java/database/DBStrategy.java) (Interfaz): Declara todos los métodos CRUD parametrizados (login, registro, salas, chat, archivos).
+  - [DBService](../Servidor/src/main/java/database/DBService.java) (Estrategia Concreta): Ejecuta las consultas SQL físicas sobre la base de datos Supabase en la nube usando JDBC.
+- **Beneficio:** Permite alternar la base de datos real con una base de datos local de prueba (o simulación en memoria) sin alterar el código de red de `ManejadorCliente`.
+
+#### B. Patrón Factory Method (Método de Fábrica)
+Se encarga de abstraer la instanciación física de la estrategia de base de datos.
+- **Estructura:**
+  - [DBCreator](../Servidor/src/main/java/database/DBCreator.java) (Creador Abstracto): Declara el Factory Method `createDatabase()`.
+  - [SupabaseDBCreator](../Servidor/src/main/java/database/SupabaseDBCreator.java) (Creador Concreto): Instancia y produce el objeto real `DBService`.
+
+#### C. Patrón Proxy (Intermediario)
+Actúa como un representante/intermediario de la base de datos, interceptando las llamadas de negocio en el hilo del socket.
+- **Estructura:**
+  - [DBProxy](../Servidor/src/main/java/database/DBProxy.java) (Implementa `DBStrategy`): Envuelve al sujeto real (`DBService`).
+  - **Funciones del Proxy:**
+    1. **Virtual Proxy (Inicialización Perezosa):** Retarda la instanciación del pool de conexiones JDBC hasta la primera consulta de red efectuada por un cliente.
+    2. **Logging/Auditing Proxy:** Escribe trazas en consola de cada operación CRUD en curso detallando sus parámetros clave, facilitando la auditoría de transacciones.
+
+### Diagrama de Clases de Persistencia (Mermaid)
+
+```mermaid
+classDiagram
+    class DBStrategy {
+        <<interface>>
+        +login(correo, password) Usuario
+        +registrar(nombres, correo, password, rol) boolean
+        +crearSala(codigoSala, nombre, idHost) boolean
+        +obtenerIdSalaPorCodigo(codigoSala) int
+        +obtenerHostIdPorCodigo(codigoSala) int
+        +solicitarUnirseASala(codigoSala, idUsuario) boolean
+        +actualizarEstadoSolicitud(codigoSala, idUsuario, nuevoEstado) boolean
+        +agregarParticipante(codigoSala, idUsuario) boolean
+        +obtenerSolicitudesPendientes(codigoSala) List
+        +obtenerParticipantesActivos(codigoSala) List
+        +guardarMensaje(codigoSala, idUsuario, contenido) boolean
+        +guardarArchivo(codigoSala, idUsuario, nombre, ruta) boolean
+        +obtenerHistorialMensajes(codigoSala) List
+        +obtenerArchivosCompartidos(codigoSala) List
+    }
+    class DBService {
+        +...()
+    }
+    class DBProxy {
+        -creator DBCreator
+        -realSubject DBStrategy
+        +...()
+    }
+    class DBCreator {
+        <<abstract>>
+        +createDatabase() DBStrategy*
+    }
+    class SupabaseDBCreator {
+        +createDatabase() DBStrategy
+    }
+
+    DBStrategy <|.. DBService
+    DBStrategy <|.. DBProxy
+    DBProxy --> DBStrategy : realSubject
+    DBProxy --> DBCreator : creator
+    DBCreator <|-- SupabaseDBCreator
+    SupabaseDBCreator ..> DBService : creates
+```
+
+---
+
+### 5.3. Patrón Singleton (Creacional - Cliente)
+Se utiliza para centralizar la conexión física TCP en el cliente, evitando duplicaciones de sockets innecesarias.
+- **Estructura:**
+  - [ClienteConexion](../Cliente/src/main/java/network/ClienteConexion.java): Posee una instancia estática privada de sí misma (`instancia`) y expone el método estático sincronizado `getInstancia()`.
+- **Beneficio:** Garantiza un único canal de comunicación bidireccional estable durante el ciclo de vida del cliente.
+
+### 5.4. Patrón Memento (Comportamiento - Cliente)
+Se utiliza para guardar y navegar por los estados anteriores del campo de texto de redacción de chat.
+- **Estructura:**
+  - [ChatInputMemento](../Cliente/src/main/java/UI/memento/ChatInputMemento.java) (Memento): Guarda de forma inmutable el texto actual.
+  - [ChatHistoryCaretaker](../Cliente/src/main/java/UI/memento/ChatHistoryCaretaker.java) (Caretaker): Mantiene una lista ordenada de mementos y maneja un índice de posición para realizar la navegación mediante flechas Arriba (↑) y Abajo (↓).
+- **Beneficio:** Brinda una experiencia de usuario enriquecida (historial de redacción de consola) encapsulando el estado sin violar su privacidad.
+
+### 5.5. Patrón Bridge (Estructural - Cliente)
+Desacopla la abstracción de transmisión de la red del formato o serializador utilizado en la red.
+- **Estructura:**
+  - **Abstracción:** [ClienteConexion](../Cliente/src/main/java/network/ClienteConexion.java) que actúa como la abstracción de transporte física.
+  - **Implementador (Bridge Interface):** [ProtocolBridge](../Cliente/src/main/java/network/bridge/ProtocolBridge.java) que define la serialización.
+  - **Implementador Concreto:** [JSONProtocolBridge](../Cliente/src/main/java/network/bridge/JSONProtocolBridge.java) que implementa la traducción a JSON con Gson.
+- **Beneficio:** Facilita cambiar el formato de mensajería (de JSON a XML o binario) alterando únicamente la clase implementadora del Bridge, sin afectar el código de red de conexión ni la UI de Swing.
+
+

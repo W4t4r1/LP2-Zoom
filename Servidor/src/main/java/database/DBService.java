@@ -11,7 +11,7 @@ import java.util.Map;
 import model.Usuario;
 import model.MensajeSocket;
 
-public class DBService {
+public class DBService implements DBStrategy {
 
     /**
      * Valida credenciales contra la tabla de Usuarios.
@@ -20,7 +20,8 @@ public class DBService {
      * @param password Contraseña en texto plano.
      * @return El objeto Usuario si las credenciales son válidas, null en caso contrario.
      */
-    public static Usuario login(String correo, String password) {
+    @Override
+    public Usuario login(String correo, String password) {
         String query = "SELECT IdUsuario, Nombres, Correo, PasswordHash, Rol FROM Usuarios WHERE Correo = ?";
         String hashIngresado = HashUtils.hashPassword(password);
         
@@ -51,7 +52,8 @@ public class DBService {
     /**
      * Registra un nuevo usuario en Supabase con su contraseña hasheada.
      */
-    public static boolean registrar(String nombres, String correo, String password, String rol) {
+    @Override
+    public boolean registrar(String nombres, String correo, String password, String rol) {
         String query = "INSERT INTO Usuarios (Nombres, Correo, PasswordHash, Rol) VALUES (?, ?, ?, ?)";
         String hash = HashUtils.hashPassword(password);
         
@@ -72,9 +74,29 @@ public class DBService {
     }
 
     /**
+     * Verifica si un correo electrónico ya está registrado en la base de datos.
+     */
+    @Override
+    public boolean existeCorreo(String correo) {
+        String query = "SELECT 1 FROM Usuarios WHERE Correo = ?";
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement(query)) {
+            
+            ps.setString(1, correo);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            System.err.println("[DB ERROR] Error al verificar existencia de correo: " + e.getMessage());
+        }
+        return false;
+    }
+
+    /**
      * Registra una sala nueva en la base de datos.
      */
-    public static boolean crearSala(String codigoSala, String nombre, int idHost) {
+    @Override
+    public boolean crearSala(String codigoSala, String nombre, int idHost) {
         String query = "INSERT INTO Salas (CodigoSala, Nombre, IdHost, Estado) VALUES (?, ?, ?, 'ACTIVA')";
         
         try (Connection conn = ConexionBD.conectar();
@@ -95,7 +117,8 @@ public class DBService {
     /**
      * Obtiene el ID numérico de una sala a partir de su código único.
      */
-    public static int obtenerIdSalaPorCodigo(String codigoSala) {
+    @Override
+    public int obtenerIdSalaPorCodigo(String codigoSala) {
         String query = "SELECT IdSala FROM Salas WHERE CodigoSala = ? AND Estado = 'ACTIVA'";
         try (Connection conn = ConexionBD.conectar();
              PreparedStatement ps = conn.prepareStatement(query)) {
@@ -114,7 +137,8 @@ public class DBService {
     /**
      * Obtiene el ID del anfitrión (Host) de una sala a partir de su código único.
      */
-    public static int obtenerHostIdPorCodigo(String codigoSala) {
+    @Override
+    public int obtenerHostIdPorCodigo(String codigoSala) {
         String query = "SELECT IdHost FROM Salas WHERE CodigoSala = ?";
         try (Connection conn = ConexionBD.conectar();
              PreparedStatement ps = conn.prepareStatement(query)) {
@@ -133,7 +157,8 @@ public class DBService {
     /**
      * Registra una solicitud de ingreso a una sala en estado PENDIENTE.
      */
-    public static boolean solicitarUnirseASala(String codigoSala, int idUsuario) {
+    @Override
+    public boolean solicitarUnirseASala(String codigoSala, int idUsuario) {
         int idSala = obtenerIdSalaPorCodigo(codigoSala);
         if (idSala == -1) {
             return false;
@@ -157,7 +182,8 @@ public class DBService {
     /**
      * Actualiza el estado de la solicitud y, si es ACEPTADO, agrega al usuario a la lista de participantes activos.
      */
-    public static boolean actualizarEstadoSolicitud(String codigoSala, int idUsuario, String nuevoEstado) {
+    @Override
+    public boolean actualizarEstadoSolicitud(String codigoSala, int idUsuario, String nuevoEstado) {
         int idSala = obtenerIdSalaPorCodigo(codigoSala);
         if (idSala == -1) {
             return false;
@@ -210,7 +236,8 @@ public class DBService {
     /**
      * Agrega directamente a un participante a la sala.
      */
-    public static boolean agregarParticipante(String codigoSala, int idUsuario) {
+    @Override
+    public boolean agregarParticipante(String codigoSala, int idUsuario) {
         int idSala = obtenerIdSalaPorCodigo(codigoSala);
         if (idSala == -1) {
             return false;
@@ -232,7 +259,8 @@ public class DBService {
      * Obtiene la lista de solicitudes pendientes para que el Host las visualice.
      * Retorna una estructura serializable (lista de mapas).
      */
-    public static List<Map<String, Object>> obtenerSolicitudesPendientes(String codigoSala) {
+    @Override
+    public List<Map<String, Object>> obtenerSolicitudesPendientes(String codigoSala) {
         List<Map<String, Object>> lista = new ArrayList<>();
         int idSala = obtenerIdSalaPorCodigo(codigoSala);
         if (idSala == -1) {
@@ -268,7 +296,8 @@ public class DBService {
     /**
      * Obtiene los IDs de los participantes activos de una sala admitida.
      */
-    public static List<Integer> obtenerParticipantesActivos(String codigoSala) {
+    @Override
+    public List<Integer> obtenerParticipantesActivos(String codigoSala) {
         List<Integer> participantes = new ArrayList<>();
         int idSala = obtenerIdSalaPorCodigo(codigoSala);
         if (idSala == -1) {
@@ -294,7 +323,8 @@ public class DBService {
     /**
      * Persiste un mensaje de chat enviado por un usuario en una sala.
      */
-    public static boolean guardarMensaje(String codigoSala, int idUsuario, String contenido) {
+    @Override
+    public boolean guardarMensaje(String codigoSala, int idUsuario, String contenido) {
         int idSala = obtenerIdSalaPorCodigo(codigoSala);
         if (idSala == -1) {
             return false;
@@ -316,7 +346,8 @@ public class DBService {
     /**
      * Registra los metadatos de un archivo compartido y su ubicación física en el Servidor.
      */
-    public static boolean guardarArchivo(String codigoSala, int idUsuario, String nombreArchivo, String rutaArchivo) {
+    @Override
+    public boolean guardarArchivo(String codigoSala, int idUsuario, String nombreArchivo, String rutaArchivo) {
         int idSala = obtenerIdSalaPorCodigo(codigoSala);
         if (idSala == -1) {
             return false;
@@ -339,7 +370,8 @@ public class DBService {
     /**
      * Obtiene el historial de mensajes de una sala ordenados cronológicamente.
      */
-    public static List<MensajeSocket> obtenerHistorialMensajes(String codigoSala) {
+    @Override
+    public List<MensajeSocket> obtenerHistorialMensajes(String codigoSala) {
         List<MensajeSocket> historial = new ArrayList<>();
         int idSala = obtenerIdSalaPorCodigo(codigoSala);
         if (idSala == -1) {
@@ -378,7 +410,8 @@ public class DBService {
     /**
      * Obtiene la lista de archivos compartidos en una sala.
      */
-    public static List<Map<String, Object>> obtenerArchivosCompartidos(String codigoSala) {
+    @Override
+    public List<Map<String, Object>> obtenerArchivosCompartidos(String codigoSala) {
         List<Map<String, Object>> lista = new ArrayList<>();
         int idSala = obtenerIdSalaPorCodigo(codigoSala);
         if (idSala == -1) {

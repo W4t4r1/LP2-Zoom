@@ -40,7 +40,7 @@ El sistema ha sido estructurado utilizando tecnologías nativas de Java para la 
 
 ## 4. Protocolo de Mensajes JSON
 
-La comunicación bidireccional cliente-servidor se basa en objetos JSON serializados mediante la clase [MensajeSocket](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Cliente/src/main/java/model/MensajeSocket.java). La clave para el enrutamiento es el campo `type`.
+La comunicación bidireccional cliente-servidor se basa en objetos JSON serializados mediante la clase [MensajeSocket](../Cliente/src/main/java/model/MensajeSocket.java). La clave para el enrutamiento es el campo `type`.
 
 ### Estructura base del mensaje JSON
 
@@ -76,7 +76,7 @@ La comunicación bidireccional cliente-servidor se basa en objetos JSON serializ
 
 ## 5. Estructura de la Base de Datos
 
-Las tablas definidas en Supabase PostgreSQL (especificadas en el archivo [schema.sql](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/db/schema.sql)) son las siguientes:
+Las tablas definidas en Supabase PostgreSQL (especificadas en el archivo [schema.sql](../db/schema.sql)) son las siguientes:
 
 ```mermaid
 erDiagram
@@ -152,14 +152,14 @@ erDiagram
 3. Envía el manejador al pool de hilos dinámico `CachedThreadPool`. Esto libera el hilo principal para seguir aceptando nuevas conexiones.
 4. El `ManejadorCliente` lee continuamente del stream de entrada (`BufferedReader.readLine()`). Cuando recibe un JSON válido:
    * Lo deserializa a `MensajeSocket`.
-   * Evalúa el tipo de mensaje y ejecuta la consulta correspondiente en la clase estática de base de datos [DBService](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Servidor/src/main/java/database/DBService.java).
+   * Evalúa el tipo de mensaje y ejecuta la consulta correspondiente en la clase estática de base de datos [DBService](../Servidor/src/main/java/database/DBService.java).
    * Si requiere distribución, llama al método auxiliar `retransmitirMensaje`, filtrando las conexiones registradas en el mapa concurrente `clientesActivos` por el código de sala asignado.
 
 ### Cliente (ClienteConexion)
 
 1. Implementa el patrón **Singleton** para centralizar la conexión física TCP.
 2. Posee un hilo de escucha dedicado (`escucharServidor`) que lee en segundo plano el flujo de entrada, evitando congelar la interfaz gráfica de Swing (Event Dispatch Thread).
-3. Permite la suscripción de múltiples controladores u oyentes gráficos mediante la interfaz [MensajeListener](file:///c:/Users/Jeanpier/OneDrive/Desktop/LP2-Zoom/Cliente/src/main/java/network/ClienteConexion.java#L22-L25). Al recibir un mensaje del servidor, este se propaga a los observadores activos.
+3. Permite la suscripción de múltiples controladores u oyentes gráficos mediante la interfaz [MensajeListener](../Cliente/src/main/java/network/ClienteConexion.java#L22-L25). Al recibir un mensaje del servidor, este se propaga a los observadores activos.
 
 ---
 
@@ -173,17 +173,27 @@ LP2-Zoom/
 │       ├── model/
 │       │   └── MensajeSocket.java # Modelo de datos del protocolo JSON
 │       ├── network/
-│       │   └── ClienteConexion.java # Gestor de sockets (Singleton + Listeners)
+│       │   ├── ClienteConexion.java # Gestor de sockets (Singleton + Bridge Abstraction)
+│       │   └── bridge/
+│       │       ├── ProtocolBridge.java # Implementador de Bridge de serialización
+│       │       └── JSONProtocolBridge.java # Implementador concreto JSON
 │       └── UI/
 │           ├── LoginFrame.java   # Ventana de autenticación
-│           └── RoomFrame.java    # Ventana de salas (Selector, Espera, Reunión)
+│           ├── RoomFrame.java    # Ventana de salas (Selector, Espera, Reunión con Caretaker de Memento)
+│           └── memento/
+│               ├── ChatInputMemento.java # Memento para historial de entrada de chat
+│               └── ChatHistoryCaretaker.java # Caretaker del historial de entrada
 ├── Servidor/                     # Módulo del Servidor (Lógica de sockets + Persistencia)
 │   ├── pom.xml                   # Configuración Maven del Servidor (JDBC, Gson, etc.)
 │   └── src/main/
 │       ├── java/
 │       │   ├── database/
 │       │   │   ├── ConexionBD.java # Proveedor de conexión JDBC a Supabase
-│       │   │   ├── DBService.java # Transacciones y consultas JDBC
+│       │   │   ├── DBStrategy.java # Interfaz de estrategia para la persistencia
+│       │   │   ├── DBService.java # Estrategia concreta que ejecuta SQL en Supabase (JDBC)
+│       │   │   ├── DBCreator.java # Creador abstracto para el Factory Method
+│       │   │   ├── SupabaseDBCreator.java # Creador concreto para instanciar DBService
+│       │   │   ├── DBProxy.java # Proxy de base de datos (lazy-init y logging)
 │       │   │   └── HashUtils.java # Hasheador de contraseñas (SHA-256)
 │       │   ├── model/
 │       │   │   ├── MensajeSocket.java
