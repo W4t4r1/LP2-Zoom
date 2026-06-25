@@ -97,6 +97,10 @@ public class ManejadorCliente implements Runnable {
                 ejecutarLogin(mensaje);
                 break;
 
+            case "REGISTER_REQUEST":
+                ejecutarRegistro(mensaje);
+                break;
+
             case "CREATE_ROOM":
                 ejecutarCrearSala(mensaje);
                 break;
@@ -179,6 +183,31 @@ public class ManejadorCliente implements Runnable {
         } else {
             respuesta.setMessage("ERROR: Credenciales incorrectas o problemas de base de datos.");
             System.out.println("[-] Login fallido para: " + correo);
+        }
+        enviarMensaje(respuesta);
+    }
+
+    private void ejecutarRegistro(MensajeSocket mensaje) {
+        String correo = mensaje.getUserName();
+        String password = mensaje.getMessage();
+        String nombres = mensaje.getFullName();
+
+        System.out.println("[*] Intento de registro para: " + correo);
+        MensajeSocket respuesta = new MensajeSocket();
+        respuesta.setType("REGISTER_RESPONSE");
+
+        if (MainServidor.database.existeCorreo(correo)) {
+            respuesta.setMessage("EMAIL_ALREADY_EXISTS");
+            System.out.println("[-] Registro fallido: el correo ya existe (" + correo + ")");
+        } else {
+            boolean exito = MainServidor.database.registrar(nombres, correo, password, "USUARIO");
+            if (exito) {
+                respuesta.setMessage("SUCCESS");
+                System.out.println("[OK] Registro exitoso para: " + correo);
+            } else {
+                respuesta.setMessage("ERROR: No se pudo insertar en la base de datos.");
+                System.out.println("[-] Error de base de datos al registrar: " + correo);
+            }
         }
         enviarMensaje(respuesta);
     }

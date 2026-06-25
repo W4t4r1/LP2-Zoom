@@ -74,6 +74,25 @@ public class DBService implements DBStrategy {
     }
 
     /**
+     * Verifica si un correo electrónico ya está registrado en la base de datos.
+     */
+    @Override
+    public boolean existeCorreo(String correo) {
+        String query = "SELECT 1 FROM Usuarios WHERE Correo = ?";
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement(query)) {
+            
+            ps.setString(1, correo);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            System.err.println("[DB ERROR] Error al verificar existencia de correo: " + e.getMessage());
+        }
+        return false;
+    }
+
+    /**
      * Registra una sala nueva en la base de datos.
      */
     @Override

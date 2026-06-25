@@ -8,6 +8,7 @@ import model.MensajeSocket;
 public interface DBStrategy {
     Usuario login(String correo, String password);
     boolean registrar(String nombres, String correo, String password, String rol);
+    boolean existeCorreo(String correo);
     boolean crearSala(String codigoSala, String nombre, int idHost);
     int obtenerIdSalaPorCodigo(String codigoSala);
     int obtenerHostIdPorCodigo(String codigoSala);

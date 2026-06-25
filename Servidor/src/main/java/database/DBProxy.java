@@ -34,6 +34,12 @@ public class DBProxy implements DBStrategy {
     }
 
     @Override
+    public synchronized boolean existeCorreo(String correo) {
+        System.out.println("[DB Proxy Logging] Verificando existencia de correo: " + correo);
+        return getRealSubject().existeCorreo(correo);
+    }
+
+    @Override
     public synchronized boolean crearSala(String codigoSala, String nombre, int idHost) {
         System.out.println("[DB Proxy Logging] Creando sala: " + codigoSala + " (" + nombre + ") por Host: " + idHost);
         return getRealSubject().crearSala(codigoSala, nombre, idHost);
