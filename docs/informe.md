@@ -1,7 +1,5 @@
 # INFORME TÉCNICO DE PROYECTO: LP2-ZOOM
 
----
-
 ## UNIVERSIDAD NACIONAL DE INGENIERÍA
 ### FACULTAD DE INGENIERÍA INDUSTRIAL Y DE SISTEMAS
 #### SW403-U: LENGUAJE DE PROGRAMACIÓN II
@@ -15,7 +13,9 @@
 
 **Fecha:** 26 de junio del 2026
 
----
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
 
 ## ÍNDICE GENERAL
 
@@ -64,7 +64,9 @@
     *   **Anexo B.** Código Fuente Crítico Seleccionado (Patrones y Sockets)
     *   **Anexo C.** Enlace al Repositorio del Proyecto
 
----
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
 
 ## CAPÍTULO 1: INTRODUCCIÓN Y CONTEXTO DEL PROYECTO
 
@@ -107,7 +109,9 @@ El sistema implementado cubre el siguiente alcance:
 2.  No está diseñado para soportar encriptación de extremo a extremo (E2EE) ni TLS en el canal cliente-servidor local; las contraseñas viajan en texto plano dentro del JSON del socket. El cifrado SSL aplica a la conexión JDBC con Supabase.
 3.  No cuenta con conexión directa punto a punto entre clientes (Peer-to-Peer); todo el flujo transita y se consolida a través del servidor central de sockets.
 
----
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
 
 ## CAPÍTULO 2: REQUERIMIENTOS DEL SISTEMA
 
@@ -144,7 +148,9 @@ El sistema implementado cubre el siguiente alcance:
 *   **RNF-05: Alta Mantenibilidad mediante Patrones de Diseño:** Estructurado bajo patrones creacionales, estructurales y de comportamiento de GoF para un código limpio y acoplado al mínimo.
 *   **RNF-06: Portabilidad y Dependencias Mínimas:** La aplicación funciona de manera nativa sin necesidad de frameworks pesados de servidor web ni contenedores; el backend usa Java SE estándar. Proyecto gestionado con Maven.
 
----
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
 
 ## CAPÍTULO 3: DISEÑO DE LA ARQUITECTURA
 
@@ -236,8 +242,6 @@ La compartición de archivos entre usuarios requiere una estrategia de almacenam
     *   **Virtual Proxy (Lazy load):** `DBProxy` carga la conexión JDBC real solo cuando se realiza la primera consulta en el servidor, acelerando el arranque del programa.
     *   **Logging Proxy:** `DBProxy` intercepta cada llamada a métodos de base de datos e imprime en consola del servidor información de depuración detallando la consulta.
     *   **Fallback Proxy (Cámara):** `CameraProxy` envuelve la estrategia de captura con inicialización perezosa, control de permisos, logging y fallback automático al simulador si falla la inicialización del hardware.
-
----
 
 ### 3.7. Diagramas UML del Proyecto
 
@@ -468,7 +472,9 @@ classDiagram
     DBProxy --> DBStrategy : realSubject
 ```
 
----
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
 
 ## CAPÍTULO 4: DISEÑO DE LA BASE DE DATOS
 
@@ -682,7 +688,9 @@ INSERT INTO Usuarios (Nombres, Correo, PasswordHash, Rol) VALUES
 ('Invitado De Prueba', 'invitado@zoom.com', '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'INVITADO');
 ```
 
----
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
 
 ## CAPÍTULO 5: PROTOCOLO DE SOCKETS
 
@@ -754,7 +762,9 @@ La transmisión de video se realiza a través de un canal continuo de tramas as�
     4.  **Frecuencia:** Para no saturar la red, la tasa de captura está limitada a un rango de 3 a 10 fotogramas por segundo (FPS).
     5.  **Retransmisión y Renderizado:** El servidor recibe el frame y lo retransmite a los demás miembros (excluyendo al emisor). El cliente decodifica Base64 en un pool de hilos de segundo plano daemon (`videoDecoderExecutor`) y pinta el frame en el EDT de Swing.
 
----
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
 
 ## CAPÍTULO 6: IMPLEMENTACIÓN DEL SISTEMA
 
@@ -838,7 +848,9 @@ El subsistema multimedia en el cliente aplica los patrones Strategy, Factory Met
     *   **Logging Proxy:** Registra marcas de tiempo y auditoría en la terminal cada vez que la cámara cambia de estado.
     *   **Fallback Inteligente (Tolerancia a fallos):** Si la inicialización del hardware en `PhysicalCameraStrategy` falla (cámara ocupada por otra app o no conectada), el Proxy captura la excepción e internamente cambia la fábrica a `SimulatedCameraCreator`, inicializando el simulador de forma transparente sin perturbar el funcionamiento del cliente.
 
----
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
 
 ## CAPÍTULO 7: PRUEBAS DEL SISTEMA Y GESTIÓN DE FALLAS
 
@@ -901,7 +913,9 @@ El sistema emite trazas detalladas en la terminal de comandos que demuestran la 
 [-] Cliente removido del mapa activo. Hilo liberado. Socket cerrado.
 ```
 
----
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
 
 ## CAPÍTULO 8: CONCLUSIONES Y TRABAJO FUTURO
 
@@ -922,7 +936,9 @@ El desarrollo de este sistema desde cero empleando la biblioteca estándar de Ja
 *   **Cifrado de Extremo a Extremo (E2EE):** Introducir un protocolo de cifrado simétrico (como AES-256) en el cliente emisor antes del empaquetado Base64, asegurando que ni el servidor de sockets ni atacantes intermediarios en Supabase puedan visualizar el contenido de los mensajes de chat o fotogramas de video.
 *   **Base de Datos Documental:** Mudar la persistencia de mensajes e historiales a una base de datos NoSQL de alto rendimiento (como MongoDB o Redis) que ofrezca mayor velocidad de consulta concurrente en comparación con la base de datos relacional PostgreSQL.
 
----
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
 
 ## ANEXOS
 
