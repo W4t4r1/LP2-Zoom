@@ -1,5 +1,7 @@
 # INFORME TÉCNICO DE PROYECTO: LP2-ZOOM
 
+> Documento académico consolidado del prototipo. Las especificaciones vivas del protocolo, despliegue y avance por fases se mantienen en la carpeta [docs/](.) (`endpoints.md`, `arquitectura.md`, `fases.md`, etc.).
+
 ---
 
 ## ÍNDICE GENERAL
@@ -75,8 +77,8 @@ Desarrollar un prototipo académico de videoconferencia y mensajería en tiempo 
 1.  Diseñar e implementar un protocolo de comunicación bidireccional sobre sockets TCP estructurado en tramas JSON para gestionar los flujos de autenticación, mensajería, control de salas de espera, transmisión de archivos y transmisión de video.
 2.  Implementar un esquema multicliente concurrente en el servidor a través de un pool de hilos dinámico (`CachedThreadPool`) que garantice el aislamiento de recursos por cliente y prevenga condiciones de carrera.
 3.  Desacoplar el renderizado gráfico en el cliente (Swing Event Dispatch Thread) de las operaciones bloqueantes de entrada/salida de red mediante un hilo de escucha en segundo plano.
-4.  Aplicar de forma transversal y sistemática los patrones de diseño orientados a objetos: **Singleton** (conexión física de red), **Bridge** (serialización de tramas), **Memento** (historial de escritura de chat), **Strategy** (persistencia de datos), **Factory Method** (creación de estrategias de almacenamiento) y **Proxy** (control de acceso y logs de auditoría de BD).
-5.  Mantener la integridad referencial y de seguridad del sistema aislando por completo al cliente del acceso directo JDBC a la base de datos en la nube.
+4.  Aplicar de forma transversal los patrones de diseño orientados a objetos: **Singleton** (conexión de red), **Bridge** (serialización JSON), **Memento** (historial de borradores de chat), **Strategy** y **Factory Method** (persistencia y captura de video), **Proxy** (BD y cámara), y el callback **Observer** (`MensajeListener`) para desacoplar UI y red.
+5.  Mantener la integridad referencial y de seguridad del sistema aislando por completo al cliente del acceso directo JDBC a la base de datos en la nube, hasheando contraseñas en el servidor.
 
 ---
 
@@ -84,16 +86,16 @@ Desarrollar un prototipo académico de videoconferencia y mensajería en tiempo 
 
 ### Alcance Funcional e Instrumental
 El sistema implementado cubre el siguiente alcance:
-1.  **Módulo de Autenticación:** Registro y login de usuarios con verificación de credenciales y almacenamiento cifrado irreversible (SHA-256).
+1.  **Módulo de Autenticación:** Registro (`RegisterFrame`) y login (`LoginFrame`) con hash SHA-256 aplicado en el servidor antes de persistir o validar credenciales.
 2.  **Gestión Dinámica de Salas:** Creación de salas con identificadores de 6 caracteres únicos generados aleatoriamente.
 3.  **Control de Admisión (Sala de Espera):** Cola de espera en tiempo real que permite al anfitrión (*Host*) admitir o rechazar invitados de forma interactiva antes de dar inicio a la reunión.
-4.  **Chat Grupal Interactivo:** Mensajería instantánea de texto con carga automática de historial persistente obtenido de la base de datos.
+4.  **Chat Grupal Interactivo:** Mensajería instantánea de texto con carga de historial persistente bajo demanda (`REQUEST_HISTORY`).
 5.  **Carga y Descarga de Archivos Compartidos:** Transferencia fragmentada de archivos binarios convertidos a Base64 para evitar la saturación de memoria, almacenándolos físicamente en el servidor e indexando sus metadatos en Supabase.
 6.  **Transmisión de Video en Red:** Captura de la cámara web física del usuario o conmutación automática hacia un simulador de video dinámico utilizando patrones de diseño, transmitiendo fotogramas comprimidos a través del socket.
 
 ### Limitaciones (Fuera de Alcance)
 *   El prototipo no incluye transmisión de audio (Voz sobre IP).
-*   No está diseñado para soportar encriptación de extremo a extremo (E2EE) en las tramas de video, limitándose al cifrado de capa de transporte (SSL) provisto por el socket y la base de datos.
+*   No está diseñado para soportar encriptación de extremo a extremo (E2EE) ni TLS en el canal cliente-servidor local; las contraseñas viajan en texto plano dentro del JSON del socket. El cifrado SSL aplica a la conexión JDBC con Supabase.
 *   No cuenta con conexión directa punto a punto entre clientes (Peer-to-Peer); todo el flujo transita y se consolida a través del servidor central de sockets.
 
 ---
@@ -129,32 +131,32 @@ Los requerimientos funcionales detallan las acciones específicas que el sistema
 ```
 
 ### RF-01: Registro de Usuarios
-*   **Descripción:** Permite a nuevos usuarios crear una cuenta ingresando su nombre, correo electrónico y contraseña.
+*   **Descripción:** Permite a nuevos usuarios crear una cuenta ingresando su nombre, correo electrónico y contraseña desde `RegisterFrame`.
 *   **Actores:** Usuario Invitado.
-*   **Entrada:** Nombres, Correo electrónico (único) y Contraseña.
-*   **Proceso:** El servidor recibe la trama de registro, verifica en la base de datos que el correo no esté registrado previamente, genera el hash SHA-256 de la contraseña y crea el registro del usuario.
-*   **Salida:** Confirmación de registro exitoso o notificación de correo duplicado.
+*   **Entrada:** Nombres (`fullName`), correo electrónico (único, en `userName`) y contraseña (en `message`).
+*   **Proceso:** El cliente envía la trama `REGISTER_REQUEST`. El servidor verifica con `existeCorreo()` que el correo no esté registrado, aplica hash SHA-256 en `DBService.registrar()` y persiste el usuario con rol `USUARIO`.
+*   **Salida:** Trama `REGISTER_RESPONSE` con `"SUCCESS"`, `"EMAIL_ALREADY_EXISTS"` o mensaje de error.
 
 ### RF-02: Inicio de Sesión (Login)
 *   **Descripción:** Valida las credenciales de los usuarios registrados para permitir el acceso al panel principal.
 *   **Actores:** Usuario Registrado.
-*   **Entrada:** Correo electrónico y Contraseña.
-*   **Proceso:** El cliente calcula el hash SHA-256 de la contraseña y lo envía en formato JSON. El servidor valida la existencia del usuario y la coincidencia de los hashes en la base de datos.
-*   **Salida:** Retorno de la sesión activa con `userId`, `userName` y transicionamiento a la vista de salas, o mensaje de credenciales incorrectas.
+*   **Entrada:** Correo electrónico (`userName`) y contraseña en texto plano (`message`).
+*   **Proceso:** El cliente envía `LOGIN_REQUEST` sin hashear localmente. El servidor recibe la contraseña, calcula SHA-256 en `DBService.login()` y compara el hash con el almacenado en Supabase.
+*   **Salida:** Trama `LOGIN_RESPONSE` con `"SUCCESS"` (incluye `userId` y `userName`) o mensaje de error; transición a la vista de salas.
 
 ### RF-03: Creación de Salas (Host)
 *   **Descripción:** Permite a un usuario autenticado inicializar una nueva sala de videoconferencia, convirtiéndolo en el anfitrión (*Host*).
 *   **Actores:** Anfitrión (*Host*).
 *   **Entrada:** Petición de creación con el nombre descriptivo de la reunión.
-*   **Proceso:** El servidor genera un código alfanumérico aleatorio y único de 6 caracteres (ej. `A1B2C3`), crea el registro correspondiente en la tabla `Salas` y asigna al usuario como el `IdHost`.
-*   **Salida:** Retorno del código de sala generado y apertura de la interfaz de moderación.
+*   **Proceso:** El servidor genera un código alfanumérico aleatorio y único de 6 caracteres (ej. `A1B2C3`), crea el registro en `Salas`, asigna al usuario como `IdHost` y lo registra de inmediato en `ParticipantesSala` con estado `ACTIVO`.
+*   **Salida:** Respuesta `CREATE_ROOM` con `roomCode` y `message: "SUCCESS"`; apertura del panel de moderación del Host.
 
 ### RF-04: Solicitud de Unión a Salas (Invitado)
 *   **Descripción:** Permite a un participante solicitar el ingreso a una sala activa mediante la digitación de su código único de 6 caracteres.
 *   **Actores:** Invitado.
 *   **Entrada:** Código de sala (6 caracteres).
-*   **Proceso:** El servidor comprueba la existencia y estado de la sala. Si es válida, inserta una solicitud en estado `PENDIENTE` en la tabla `SolicitudesSala` y notifica al cliente que debe esperar admisión.
-*   **Salida:** Interfaz del invitado bloqueada en pantalla de espera, o error si la sala no existe.
+*   **Proceso:** El servidor comprueba la existencia y estado de la sala. Si es válida, inserta una solicitud en estado `PENDIENTE` en `SolicitudesSala`, responde `JOIN_ROOM_RESPONSE` con `"PENDIENTE"` y notifica al Host con `WAITING_ROOM_UPDATE`.
+*   **Salida:** Interfaz del invitado en pantalla de espera, o error si la sala no existe.
 
 ### RF-05: Cola de Espera Reactiva (Host)
 *   **Descripción:** El panel de moderación del Host lista en tiempo real y dinámicamente a todos los participantes con solicitudes en estado `PENDIENTE`.
@@ -167,15 +169,15 @@ Los requerimientos funcionales detallan las acciones específicas que el sistema
 *   **Descripción:** El Host tiene la potestad de admitir (Aceptar) o declinar (Rechazar) a cada participante de la cola.
 *   **Actores:** Anfitrión (*Host*).
 *   **Entrada:** Acción de clic sobre los botones "Admitir" o "Rechazar" para un usuario específico.
-*   **Proceso:** El Host envía una trama `ADMIT_USER`. El servidor actualiza el estado de la solicitud en la base de datos a `ACEPTADO` o `RECHAZADO` y retransmite la decisión al socket del invitado.
-*   **Salida:** Transición de estado para el invitado (espera de inicio o regreso al menú de salas).
+*   **Proceso:** El Host envía `ADMIT_USER` con `message: "ACEPTAR"` o `"RECHAZAR"`. El servidor actualiza `SolicitudesSala` a `ACEPTADO` o `RECHAZADO` y notifica al invitado con `ADMIT_USER` y `message: "ACCEPTED"` o `"REJECTED"`.
+*   **Salida:** El invitado admitido pasa a la pantalla UI `INVITADO_ADMITIDO`; el rechazado regresa al selector de salas.
 
 ### RF-07: Sincronización e Inicio Controlado de la Reunión
 *   **Descripción:** Ningún invitado admitido puede visualizar el área de trabajo de la reunión (video, chat, archivos) hasta que el Host dé inicio oficial.
 *   **Actores:** Anfitrión (*Host*), Invitado Admitido.
 *   **Entrada:** Evento de inicio del Host ("Iniciar Reunión").
-*   **Proceso:** El Host envía el comando de inicio. El servidor cambia el estado de los participantes en la tabla `ParticipantesSala` a `ACTIVO` y difunde el comando a todos los sockets admitidos.
-*   **Salida:** Transición en cadena mediante `CardLayout` en todos los clientes para mostrar la interfaz interactiva de la sala de forma simultánea.
+*   **Proceso:** El Host envía `START_MEETING_REQUEST`. El servidor valida que el emisor sea el Host y difunde `MEETING_STARTED` con `message: "STARTED"` al Host y a los usuarios registrados en `ParticipantesSala` con estado `ACTIVO`.
+*   **Salida:** Transición mediante `CardLayout` a la pantalla `REUNION` en los clientes que reciben `MEETING_STARTED`.
 
 ### RF-08: Chat Grupal en Tiempo Real
 *   **Descripción:** Habilita un chat de texto grupal para que los participantes activos se comuniquen de forma instantánea.
@@ -187,9 +189,9 @@ Los requerimientos funcionales detallan las acciones específicas que el sistema
 ### RF-09: Historial de Chat Persistente
 *   **Descripción:** Los participantes que ingresan a una sala ven automáticamente los mensajes que se enviaron previamente en ella.
 *   **Actores:** Todos los miembros al momento del ingreso.
-*   **Entrada:** Evento de ingreso a la reunión activa.
-*   **Proceso:** Al concretarse el inicio de la reunión, el servidor realiza una consulta a la tabla `Mensajes` filtrada por el código de sala y ordenada por fecha. Devuelve la lista estructurada en JSON.
-*   **Salida:** Área de texto de chat precargada con el historial de la reunión.
+*   **Entrada:** Transición del cliente a la pantalla de reunión activa (`entrarAReunion()`).
+*   **Proceso:** El cliente envía `CHAT_MESSAGE` con `message: "REQUEST_HISTORY"`. El servidor consulta `Mensajes` filtrada por sala y reenvía cada mensaje histórico como trama `CHAT_MESSAGE` individual al solicitante, sin retransmitir ni persistir ese comando.
+*   **Salida:** Área de chat precargada con el historial de la reunión.
 
 ### RF-10: Carga de Archivos Compartidos en Chunks (Base64)
 *   **Descripción:** Permite compartir archivos de hasta 5 MB segmentándolos en fragmentos binarios para no saturar los sockets de red.
@@ -202,7 +204,7 @@ Los requerimientos funcionales detallan las acciones específicas que el sistema
 *   **Descripción:** Lista los archivos compartidos en la sala y permite su descarga y reconstrucción local.
 *   **Actores:** Miembros activos.
 *   **Entrada:** Selección de archivo y ruta de guardado en el sistema de archivos local.
-*   **Proceso:** Al hacer clic en descargar, el cliente solicita el archivo. El servidor lee el binario del directorio `uploads/` y lo transmite fragmentado. El cliente recibe las tramas y escribe secuencialmente los bytes en la ruta de destino.
+*   **Proceso:** El cliente envía `GET_FILES_REQUEST` y recibe `GET_FILES_RESPONSE`. Al descargar, emite `FILE_DOWNLOAD_REQUEST`; el servidor valida la ruta dentro de `uploads/` y transmite el binario con la secuencia `FILE_START`, `FILE_CHUNK` y `FILE_END` (misma fase inversa a la subida).
 *   **Salida:** Archivo reconstruido físicamente en la máquina local del cliente.
 
 ### RF-12: Captura y Envío de Video de Cámara (Webcam/Simulación)
@@ -216,7 +218,7 @@ Los requerimientos funcionales detallan las acciones específicas que el sistema
 *   **Descripción:** Recibe los streams de video de cada participante activo y los pinta en paneles dinámicos asignados a cada usuario.
 *   **Actores:** Todos los miembros activos.
 *   **Entrada:** Tramas de video entrantes (`CAMERA_FRAME`) desde el servidor.
-*   **Proceso:** El servidor recibe el frame y lo difunde a todos los demás miembros. El cliente receptor decodifica el string Base64 a bytes, reconstruye el objeto `BufferedImage` y lo dibuja asíncronamente en el panel respectivo.
+*   **Proceso:** El servidor retransmite `CAMERA_FRAME` y `CAMERA_STATE` a los demás miembros de la sala, **excluyendo al emisor**. El cliente decodifica Base64 en un pool daemon (`videoDecoderExecutor`) y pinta el frame en el EDT de Swing.
 *   **Salida:** Visualización fluida del flujo de video de los participantes en la cuadrícula de Swing.
 
 ---
@@ -234,12 +236,12 @@ Los requerimientos no funcionales definen las restricciones de rendimiento, conf
 *   **Mecanismo:** Aislamiento estricto de hilos. La lectura en el socket se ejecuta de forma asíncrona y continua en un hilo secundario (`escucharServidor` en `ClienteConexion`). Las modificaciones de la interfaz gráfica se despachan al Event Dispatch Thread (EDT) utilizando `SwingUtilities.invokeLater(...)`.
 
 ### RNF-03: Seguridad en Datos Sensibles e Interacción
-*   **Descripción:** La base de datos no expone credenciales en texto plano, y la conexión externa es cifrada.
-*   **Mecanismo:** Hasheo de contraseñas mediante algoritmo SHA-256 en ambos extremos. El cliente nunca accede a la base de datos; toda consulta se realiza a través del servidor mediante JDBC seguro con protocolo SSL forzado.
+*   **Descripción:** Las contraseñas no se almacenan en texto plano en la base de datos, y la conexión JDBC a Supabase es cifrada.
+*   **Mecanismo:** Hasheo SHA-256 aplicado **en el servidor** al registrar (`DBService.registrar`) y al autenticar (`DBService.login`). El cliente envía la contraseña en texto plano dentro del payload JSON del socket local (sin E2EE). El cliente nunca accede a la base de datos; el servidor usa JDBC con `sslmode=require`.
 
 ### RNF-04: Confiabilidad y Gestión Limpia de Recursos
 *   **Descripción:** El sistema maneja desconexiones imprevistas (caídas de internet o cierres forzados) sin dejar sockets "zombis" o hilos abiertos en el servidor.
-*   **Mecanismo:** Uso de bloques `try-catch-finally` en `ManejadorCliente`. Al detectar el fin de lectura, el servidor cierra los streams, remueve el socket del mapa concurrente de `clientesActivos` y difunde un mensaje de salida a los demás integrantes para refrescar su UI.
+*   **Mecanismo:** Bloques `try-catch-finally` en `ManejadorCliente`. Al detectar fin de lectura, `desconectar()` remueve al usuario de `clientesActivos`, emite `LEAVE_ROOM` y `CAMERA_STATE "OFF"`, actualiza la solicitud a `RECHAZADO` en BD y difunde un mensaje de sistema por chat antes de cerrar el socket.
 
 ### RNF-05: Alta Mantenibilidad mediante Patrones de Diseño (Modularidad)
 *   **Descripción:** El código del prototipo está estructurado bajo patrones de diseño orientados a objetos que reducen el acoplamiento y facilitan la extensión.
@@ -247,11 +249,12 @@ Los requerimientos no funcionales definen las restricciones de rendimiento, conf
     *   **Singleton:** Instancia única para coordinar la transmisión en `ClienteConexion`.
     *   **Bridge:** Desacopla la transmisión física (`ClienteConexion`) del formato de serialización (`ProtocolBridge` / `JSONProtocolBridge`).
     *   **Memento:** Guarda estados de edición previos del chat input (`ChatInputMemento` y `ChatHistoryCaretaker`) para navegar en el historial con flechas direccionales.
-    *   **Strategy, Factory Method y Proxy:** Estructuran el motor de base de datos en el servidor, permitiendo cargar perezosamente la persistencia, auditar operaciones en tiempo real y cambiar la estrategia de almacenamiento sin alterar las capas de red.
+    *   **Strategy, Factory Method y Proxy:** Estructuran el motor de base de datos en el servidor y la captura de video en el cliente.
+    *   **Observer (callback):** `ClienteConexion.MensajeListener` desacopla la recepción de tramas de las pantallas Swing (`LoginFrame`, `RegisterFrame`, `RoomFrame`).
 
-### RNF-06: Portabilidad y Dependencias Mínimas
-*   **Descripción:** La aplicación funciona sin dependencias de hardware o frameworks de servidor privativos.
-*   **Mecanismo:** Configurada enteramente en Maven, ejecutándose sobre cualquier Java Virtual Machine 17+ (Java 26 verificado). Utiliza Java SE puro para la GUI (Swing) y comunicación, abstrayéndose de dependencias de red de terceros.
+### RNF-06: Portabilidad y Dependencias Controladas
+*   **Descripción:** La aplicación funciona sin frameworks de servidor web ni contenedores empotrados; el backend usa Java SE nativo.
+*   **Mecanismo:** Proyecto Maven con Java 17+. El servidor depende de Gson y el driver PostgreSQL. El cliente añade `webcam-capture`, JNA y SLF4J para captura de cámara física, manteniendo Swing y sockets como núcleo de la UI y la red.
 
 ---
 
@@ -324,8 +327,14 @@ Si un cliente realizara operaciones de lectura bloqueante (`socket.getInputStrea
 
 ### Solución mediante Hilos Asíncronos
 Para resolver esto, la arquitectura del cliente implementa dos flujos de ejecución en paralelo:
-1.  **Hilo de Escucha (Background Thread):** Al inicializarse el cliente, el Singleton `ClienteConexion` arranca un hilo secundario encargado exclusivamente de hacer la lectura bloqueante del stream de red en un bucle continuo.
-2.  **Hilo Gráfico (EDT):** Cuando el hilo secundario recibe y deserializa una trama, no actualiza la UI directamente. En su lugar, despacha la tarea de actualización a la cola de eventos gráficos mediante `SwingUtilities.invokeLater()`. Esto asegura la total responsividad de la aplicación.
+1.  **Hilo de Escucha (Background Thread):** Al inicializarse el cliente, el Singleton `ClienteConexion` arranca el hilo `HiloEscuchaCliente` encargado exclusivamente de la lectura bloqueante del stream de red en un bucle continuo.
+2.  **Hilo Gráfico (EDT):** Cuando el hilo secundario recibe y deserializa una trama, no actualiza la UI directamente. Despacha la tarea al EDT mediante `SwingUtilities.invokeLater()`.
+
+### Patrón Observer (Callback de Red)
+Las pantallas implementan `ClienteConexion.MensajeListener` (`onMensajeRecibido`, `onDesconexion`). El hilo de escucha notifica a la UI registrada sin acoplar `ClienteConexion` a Swing, permitiendo que `LoginFrame`, `RegisterFrame` y `RoomFrame` reaccionen de forma independiente.
+
+### Pool de Decodificación de Video
+Para evitar bloquear el hilo lector del socket al procesar fotogramas JPEG, `RoomFrame` delega la decodificación Base64 a un `ExecutorService` daemon (`videoDecoderExecutor`) y solo pinta la imagen resultante en el EDT.
 
 ---
 
@@ -355,7 +364,10 @@ La compartición de archivos entre usuarios requiere una estrategia de almacenam
 
 *   **Los Archivos Físicos:** Se escriben directamente en un directorio local del servidor llamado `uploads/`. La transferencia viaja segmentada en chunks codificados en Base64 para prevenir desbordamientos de la memoria de la JVM.
 *   **Los Metadatos:** En Supabase solo se indexa la información de control del archivo a través de la tabla `ArchivosCompartidos` (nombre, tamaño aproximado, ruta física en el servidor, usuario que lo subió y la sala correspondiente).
-*   **El Flujo de Descarga:** Cuando un usuario hace clic sobre un archivo del catálogo en el cliente, el servidor consulta la base de datos para obtener la ruta física local, lee el archivo binario del disco y envía los chunks correspondientes de vuelta al socket.
+*   **El Flujo de Descarga:** Cuando un usuario solicita descargar un archivo, el servidor valida la ruta canónica dentro de `uploads/`, lee el binario del disco y lo reenvía al cliente con la misma secuencia `FILE_START` → `FILE_CHUNK` → `FILE_END`.
+
+### Conexión JDBC Persistente (`ConexionBD`)
+Para reducir la latencia del handshake SSL con Supabase, `ConexionBD` mantiene una conexión física singleton y expone un **proxy dinámico** de Java que intercepta llamadas a `close()`, evitando que los bloques `try-with-resources` de JDBC cierren el socket de red en cada consulta.
 
 ---
 
@@ -364,7 +376,7 @@ La compartición de archivos entre usuarios requiere una estrategia de almacenam
 El sistema aplica de manera estricta y transversal **6 patrones de diseño** de la ingeniería de software para estructurar la lógica de negocio, red y persistencia.
 
 ### 1. Patrón Singleton
-*   **Clase Aplicada:** [ClienteConexion.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/ClienteConexion.java)
+*   **Clase Aplicada:** [ClienteConexion.java](../Cliente/src/main/java/network/ClienteConexion.java)
 *   **Propósito:** Asegurar que exista una única conexión física TCP abierta entre el cliente y el servidor durante todo el ciclo de vida de la aplicación, proporcionando un punto de acceso global.
 *   **Uso en Código:**
     ```java
@@ -377,12 +389,12 @@ El sistema aplica de manera estricta y transversal **6 patrones de diseño** de 
     ```
 
 ### 2. Patrón Bridge
-*   **Clases Aplicadas:** [ProtocolBridge.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/bridge/ProtocolBridge.java), [JSONProtocolBridge.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/bridge/JSONProtocolBridge.java), y la abstracción `ClienteConexion`.
+*   **Clases Aplicadas:** [ProtocolBridge.java](../Cliente/src/main/java/network/bridge/ProtocolBridge.java), [JSONProtocolBridge.java](../Cliente/src/main/java/network/bridge/JSONProtocolBridge.java), y la abstracción `ClienteConexion`.
 *   **Propósito:** Desacoplar la abstracción de transmisión de red de la implementación concreta de serialización de mensajes (JSON utilizando la biblioteca Gson).
 *   **Uso en Código:** `ClienteConexion` contiene una referencia a la interfaz `ProtocolBridge`. Toda serialización y deserialización se delega a ella, lo que permite cambiar el formato de mensajería (de JSON a XML o binario) sin alterar el socket TCP ni la interfaz Swing.
 
 ### 3. Patrón Memento
-*   **Clases Aplicadas:** [ChatInputMemento.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/UI/memento/ChatInputMemento.java), [ChatHistoryCaretaker.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/UI/memento/ChatHistoryCaretaker.java), e integrador gráfico [RoomFrame.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/UI/RoomFrame.java).
+*   **Clases Aplicadas:** [ChatInputMemento.java](../Cliente/src/main/java/UI/memento/ChatInputMemento.java), [ChatHistoryCaretaker.java](../Cliente/src/main/java/UI/memento/ChatHistoryCaretaker.java), e integrador gráfico [RoomFrame.java](../Cliente/src/main/java/UI/RoomFrame.java).
 *   **Propósito:** Capturar y guardar el estado interno de un cuadro de texto (el borrador escrito del chat) para permitir al usuario recuperarlo navegando hacia atrás o adelante con las flechas direccionales (Arriba/Abajo) en la UI.
 *   **Uso en Código:**
     *   **Memento:** Guarda el texto escrito (`ChatInputMemento`).
@@ -390,21 +402,22 @@ El sistema aplica de manera estricta y transversal **6 patrones de diseño** de 
     *   **Originator:** La caja de texto de `RoomFrame` guarda y restaura el estado a través del listener de teclas.
 
 ### 4. Patrón Strategy
-*   **Clases Aplicadas:** [DBStrategy.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Servidor/src/main/java/database/DBStrategy.java) y [DBService.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Servidor/src/main/java/database/DBService.java).
-*   **Propósito:** Desacoplar la lógicas de acceso a la base de datos de las tramas de red mediante un contrato abstracto, facilitando el cambio de persistencia (ej. Supabase por un Mock local o MongoDB).
-*   **Uso en Código:** `DBStrategy` define las operaciones CRUD del sistema. `DBService` es la estrategia concreta que implementa JDBC a Supabase. `ManejadorCliente` interactúa únicamente con el tipo de dato abstracto `DBStrategy`.
+*   **Clases Aplicadas:** [DBStrategy.java](../Servidor/src/main/java/database/DBStrategy.java), [DBService.java](../Servidor/src/main/java/database/DBService.java), [CameraStrategy.java](../Cliente/src/main/java/network/camera/CameraStrategy.java), [PhysicalCameraStrategy.java](../Cliente/src/main/java/network/camera/PhysicalCameraStrategy.java) y [SimulatedCameraStrategy.java](../Cliente/src/main/java/network/camera/SimulatedCameraStrategy.java).
+*   **Propósito:** Encapsular algoritmos intercambiables tanto en persistencia (BD) como en captura de video (cámara física vs. simulador).
+*   **Uso en Código:** `DBStrategy`/`DBService` en el servidor; `CameraStrategy` con implementaciones física y simulada en el cliente. `ManejadorCliente` y `RoomFrame` dependen de las abstracciones, no de implementaciones concretas.
 
 ### 5. Patrón Factory Method
-*   **Clases Aplicadas:** [DBCreator.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Servidor/src/main/java/database/DBCreator.java) y [SupabaseDBCreator.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Servidor/src/main/java/database/SupabaseDBCreator.java).
-*   **Propósito:** Definir una interfaz para la creación de un objeto, pero dejar que las subclases decidan qué clase concreta instanciar.
-*   **Uso en Código:** `DBCreator` declara la firma `createDatabase()`. `SupabaseDBCreator` hereda e implementa dicho método retornando una instancia de `DBService`. Esto encapsula la lógica de instanciación.
+*   **Clases Aplicadas:** [DBCreator.java](../Servidor/src/main/java/database/DBCreator.java), [SupabaseDBCreator.java](../Servidor/src/main/java/database/SupabaseDBCreator.java), [CameraCreator.java](../Cliente/src/main/java/network/camera/CameraCreator.java), [PhysicalCameraCreator.java](../Cliente/src/main/java/network/camera/PhysicalCameraCreator.java) y [SimulatedCameraCreator.java](../Cliente/src/main/java/network/camera/SimulatedCameraCreator.java).
+*   **Propósito:** Delegar la instanciación de estrategias concretas (BD Supabase, cámara física o simulada) a creadores especializados.
+*   **Uso en Código:** `SupabaseDBCreator.createDatabase()` retorna `DBService`; `PhysicalCameraCreator` y `SimulatedCameraCreator` producen sus respectivas estrategias de video.
 
 ### 6. Patrón Proxy
-*   **Clases Aplicadas:** [DBProxy.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Servidor/src/main/java/database/DBProxy.java).
-*   **Propósito:** Actuar como un intermediario o controlador de acceso a la estrategia real de base de datos para proveer carga perezosa y auditoría.
+*   **Clases Aplicadas:** [DBProxy.java](../Servidor/src/main/java/database/DBProxy.java), [CameraProxy.java](../Cliente/src/main/java/network/camera/CameraProxy.java) y el proxy dinámico JDBC en [ConexionBD.java](../Servidor/src/main/java/database/ConexionBD.java).
+*   **Propósito:** Intermediar el acceso a recursos costosos (BD, cámara, conexión JDBC) añadiendo lazy-load, auditoría y tolerancia a fallos.
 *   **Uso en Código:** `DBProxy` implementa `DBStrategy` y envuelve la base de datos real.
     *   **Virtual Proxy:** Carga perezosamente la conexión JDBC real solo cuando se realiza la primera consulta del servidor, acelerando el arranque del programa.
     *   **Logging Proxy:** Intercepta cada llamada a métodos de base de datos e imprime en consola del servidor información de depuración detallando la consulta en curso.
+*   **Uso en Código (Cámara):** `CameraProxy` envuelve la estrategia de captura con inicialización perezosa, control de permisos, logging y fallback automático al simulador si falla el hardware.
 
 ---
 
@@ -679,7 +692,8 @@ Todos los eventos de red del sistema se serializan bajo un único modelo de dato
   "userId": 123,
   "userName": "Nombre del Usuario",
   "message": "Contenido del mensaje / Cadenas codificadas en Base64 / Payload serializado",
-  "sentAt": "2026-06-24T11:25:00Z"
+  "sentAt": "2026-06-24T11:25:00Z",
+  "fullName": "Nombre Completo (solo registro)"
 }
 ```
 
@@ -687,33 +701,40 @@ Todos los eventos de red del sistema se serializan bajo un único modelo de dato
 *   **`type` (String):** Clave de enrutamiento principal. Indica al servidor o al cliente el propósito del mensaje para derivarlo al manejador correspondiente.
 *   **`roomCode` (String):** Código alfanumérico único de la sala a la que pertenece el usuario (ej. `A1B2C3`). El servidor lo utiliza para filtrar y retransmitir los mensajes a los miembros adecuados.
 *   **`userId` (Integer):** Identificador único del usuario emisor en la base de datos. Si el mensaje es emitido por el sistema, este campo toma el valor `0` o `null`.
-*   **`userName` (String):** Nombre legible del usuario emisor para ser renderizado en la interfaz gráfica del chat o las leyendas de video.
-*   **`message` (String):** Campo multipropósito de capacidad extendida. Contiene texto del chat, credenciales cifradas, arreglos JSON anidados (sala de espera) o bloques fragmentados codificados en Base64 (archivos o frames de video).
+*   **`userName` (String):** Nombre legible del usuario emisor para ser renderizado en la interfaz gráfica del chat o las leyendas de video. En login/registro transporta el correo electrónico.
+*   **`message` (String):** Campo multipropósito de capacidad extendida. Contiene texto del chat, contraseña en texto plano (login/registro), arreglos JSON anidados (sala de espera), comando `"REQUEST_HISTORY"`, o bloques fragmentados codificados en Base64 (archivos o frames de video).
 *   **`sentAt` (String):** Timestamp de envío en formato ISO-8601.
+*   **`fullName` (String):** Nombre completo del usuario; requerido en `REGISTER_REQUEST`.
 
 ---
 
 ## 5.3. Contrato de Mensajería: Catálogo y Especificación de Mensajes
 
-El sistema define un catálogo de mensajes específicos sobre el socket TCP para resolver los casos de uso de negocio.
+El sistema define un catálogo de mensajes específicos sobre el socket TCP para resolver los casos de uso de negocio. La especificación detallada con ejemplos JSON está en [endpoints.md](endpoints.md).
 
 | Tipo de Mensaje (`type`) | Origen $\rightarrow$ Destino | Descripción | Payload en el campo `message` |
 | :--- | :--- | :--- | :--- |
-| **`LOGIN_REQUEST`** | Cliente $\rightarrow$ Servidor | Petición para verificar credenciales. | Contraseña en texto plano (cuyo hash validará el servidor). `userName` lleva el correo. |
-| **`LOGIN_RESPONSE`** | Servidor $\rightarrow$ Cliente | Resultado de autenticación. | `"SUCCESS"` (con datos en `userId` y `userName`) o mensaje de error. |
-| **`CREATE_ROOM`** | Cliente $\rightarrow$ Servidor | Solicita crear una sala. | Nombre de la sala a crear. |
-| **`CREATE_ROOM_RESPONSE`**| Servidor $\rightarrow$ Cliente | Confirma la creación. | Código generado de la sala (en `roomCode`) o `"ERROR"`. |
-| **`JOIN_ROOM_REQUEST`** | Cliente $\rightarrow$ Servidor | Petición para ingresar a sala de espera.| Código de la sala de destino. |
-| **`WAITING_ROOM_UPDATE`** | Servidor $\rightarrow$ Host | Actualiza lista de espera al Host. | Array JSON serializado con los datos de usuarios `PENDIENTE`. |
-| **`ADMIT_USER`** | Cliente (Host) $\rightarrow$ Servidor | Decisión sobre un postulante. | `"ACEPTAR"` o `"RECHAZAR"` concatenado con metadatos del usuario. |
-| **`START_MEETING_REQUEST`**| Cliente (Host) $\rightarrow$ Servidor | Ordena iniciar la reunión activa. | Vacío. Gatilla la transición de UI a todos los invitados. |
-| **`CHAT_MESSAGE`** | Bidireccional | Intercambio de mensajería instantánea.| Texto libre del chat ingresado por el usuario. |
-| **`CAMERA_STATE`** | Bidireccional | Informa estado de cámara de un usuario. | `"ON"` o `"OFF"`. Activa o desactiva su cuadrícula visual. |
+| **`REGISTER_REQUEST`** | Cliente $\rightarrow$ Servidor | Alta de nueva cuenta. | Contraseña en texto plano. `userName` = correo; `fullName` = nombres. |
+| **`REGISTER_RESPONSE`** | Servidor $\rightarrow$ Cliente | Resultado del registro. | `"SUCCESS"`, `"EMAIL_ALREADY_EXISTS"` o error. |
+| **`LOGIN_REQUEST`** | Cliente $\rightarrow$ Servidor | Petición para verificar credenciales. | Contraseña en texto plano. `userName` = correo. |
+| **`LOGIN_RESPONSE`** | Servidor $\rightarrow$ Cliente | Resultado de autenticación. | `"SUCCESS"` (con `userId` y `userName`) o mensaje de error. |
+| **`CREATE_ROOM`** | Bidireccional | Solicitud o confirmación de creación de sala. | Cliente: nombre de sala. Servidor: `"SUCCESS"` + `roomCode`. |
+| **`JOIN_ROOM_REQUEST`** | Cliente $\rightarrow$ Servidor | Petición para ingresar a sala de espera. | (Vacío; código en `roomCode`.) |
+| **`JOIN_ROOM_RESPONSE`** | Servidor $\rightarrow$ Cliente | Respuesta a la postulación. | `"PENDIENTE"` o mensaje de error. |
+| **`WAITING_ROOM_UPDATE`** | Servidor $\rightarrow$ Host | Actualiza lista de espera al Host. | Array JSON serializado con solicitudes `PENDIENTE`. |
+| **`ADMIT_USER`** | Bidireccional | Decisión de admisión. | Host→Servidor: `"ACEPTAR"` / `"RECHAZAR"`. Servidor→Invitado: `"ACCEPTED"` / `"REJECTED"`. |
+| **`START_MEETING_REQUEST`**| Cliente (Host) $\rightarrow$ Servidor | Ordena iniciar la reunión activa. | Vacío. |
+| **`MEETING_STARTED`** | Servidor $\rightarrow$ Clientes | Notifica inicio de reunión. | `"STARTED"`. |
+| **`CHAT_MESSAGE`** | Bidireccional | Chat o solicitud de historial. | Texto libre, o `"REQUEST_HISTORY"` para cargar historial. |
+| **`CAMERA_STATE`** | Bidireccional | Informa estado de cámara de un usuario. | `"ON"` o `"OFF"`. |
 | **`CAMERA_FRAME`** | Bidireccional | Envío de fotograma de webcam. | Imagen JPG redimensionada codificada en Base64. |
-| **`LEAVE_ROOM`** | Cliente $\rightarrow$ Servidor | Salida voluntaria de la sala. | Mensaje de despedida o vacío. |
+| **`LEAVE_ROOM`** | Cliente $\rightarrow$ Servidor | Salida voluntaria o por desconexión. | Mensaje de despedida o vacío. |
 | **`GET_FILES_REQUEST`** | Cliente $\rightarrow$ Servidor | Solicita lista de archivos de la sala. | Vacío. |
-| **`GET_FILES_RESPONSE`** | Servidor $\rightarrow$ Cliente | Retorna la lista de archivos. | Array JSON serializado con metadatos de archivos de la sala. |
-| **`FILE_DOWNLOAD_REQUEST`**| Cliente $\rightarrow$ Servidor | Solicita descargar un archivo físico. | Ruta absoluta física del archivo en el servidor. |
+| **`GET_FILES_RESPONSE`** | Servidor $\rightarrow$ Cliente | Retorna la lista de archivos. | Array JSON serializado con metadatos. |
+| **`FILE_START`** | Bidireccional | Inicia transferencia de archivo. | `fileId\|nombreArchivo` (subida) o metadatos (descarga). |
+| **`FILE_CHUNK`** | Bidireccional | Fragmento binario en Base64. | `fileId\|chunkBase64`. |
+| **`FILE_END`** | Bidireccional | Finaliza transferencia de archivo. | `fileId`. |
+| **`FILE_DOWNLOAD_REQUEST`**| Cliente $\rightarrow$ Servidor | Solicita descargar un archivo físico. | Ruta relativa en `uploads/`. |
 
 ---
 
@@ -762,7 +783,7 @@ if (!pathAbsoluto.startsWith(uploadsAbsoluto)) {
     return;
 }
 ```
-Si la ruta es segura y el archivo existe, el servidor inicializa un hilo secundario independiente para transmitir el archivo en chunks de 64 KB al cliente con un **retardo controlado de 10 milisegundos** entre tramas para evitar la saturación del buffer TCP del sistema operativo.
+Si la ruta es segura y el archivo existe, el servidor arranca un hilo independiente que transmite el archivo al cliente con la secuencia **`FILE_START` → `FILE_CHUNK` → `FILE_END`** (misma fase que la subida, pero en dirección servidor→cliente), incorporando un retraso controlado de 10 ms por chunk para evitar la saturación del buffer TCP del sistema operativo.
 
 ---
 
@@ -791,7 +812,7 @@ La transmisión activa de video sigue las siguientes fases en tiempo real:
 *   **Procesamiento Gráfico:** La imagen capturada es redimensionada a una resolución estándar de **320x240 píxeles** y comprimida utilizando el codificador JPEG. Esto reduce drásticamente el peso de cada fotograma (a 8 KB-15 KB).
 *   **Serialización:** Los bytes resultantes del JPEG comprimido se codifican a string Base64 y se introducen en el campo `message` de la trama `CAMERA_FRAME` enviada al socket.
 *   **Frecuencia:** Para no saturar la red, la tasa de captura está limitada a un rango de **3 a 10 fotogramas por segundo (FPS)**.
-*   **Retransmisión y Renderizado:** El servidor recibe el frame de video y lo retransmite de forma inmediata a todos los clientes activos de la sala. El hilo de red secundario de cada receptor recibe la trama, decodifica el Base64, regenera la imagen y delega su dibujado al hilo gráfico EDT de Swing de forma segura.
+*   **Retransmisión y Renderizado:** El servidor recibe el frame y lo retransmite a los demás miembros activos de la sala (**excluyendo al emisor**). El hilo lector delega la decodificación Base64 al pool `videoDecoderExecutor`; el resultado se pinta en el EDT de Swing de forma segura.
 
 ---
 
@@ -803,9 +824,10 @@ Este capítulo detalla la implementación técnica a nivel de código fuente de 
 
 ## 6.1. Módulo de Registro y Login Criptográfico (SHA-256)
 
-La seguridad de las credenciales de acceso se implementa en ambos extremos de la arquitectura:
-1.  **En el Cliente (`LoginFrame.java`):** El usuario ingresa su correo electrónico y contraseña. Al presionar "Iniciar Sesión", la aplicación no transmite la contraseña en texto plano; calcula el hash criptográfico SHA-256 de la contraseña y lo emite dentro de la trama `LOGIN_REQUEST`.
-2.  **En el Servidor (`HashUtils.java` y `DBService.java`):** El servidor recibe la trama. El hash de la contraseña se pasa a la estrategia de persistencia (`DBStrategy.login()`). El método ejecuta una consulta JDBC parametrizada de tipo `SELECT` filtrada por correo electrónico y compara los hashes.
+La seguridad de las credenciales de acceso se implementa en el servidor:
+
+1.  **En el Cliente (`LoginFrame.java` / `RegisterFrame.java`):** El usuario ingresa correo y contraseña. El cliente envía la contraseña **en texto plano** dentro de `message` mediante las tramas `LOGIN_REQUEST` o `REGISTER_REQUEST` (este último incluye `fullName`).
+2.  **En el Servidor (`HashUtils.java` y `DBService.java`):** El servidor recibe la trama. En login, `DBService.login()` hashea la contraseña recibida y compara con `PasswordHash` en Supabase. En registro, `existeCorreo()` evita duplicados y `registrar()` persiste el hash SHA-256.
 
 ### Hashing SHA-256 en `HashUtils.java`:
 ```java
@@ -834,15 +856,15 @@ Este módulo gestiona el ciclo de vida inicial de una reunión.
 
 ### Creación de la Sala
 El Host ingresa el nombre de la reunión y el cliente transmite una trama `CREATE_ROOM`. El `ManejadorCliente` recibe el mensaje y ejecuta la lógica de creación:
-*   Genera un código alfanumérico único de 6 caracteres en mayúsculas combinando letras y números (ej. `ZOOM26`).
-*   Inserta el registro de la sala en la tabla `Salas` estableciendo al creador como `IdHost` y el estado como `'ACTIVA'`.
-*   El servidor responde con la trama `CREATE_ROOM_RESPONSE`, lo que instruye al cliente del Host a transicionar al panel de la sala de espera.
+*   Genera un código alfanumérico único de 6 caracteres en mayúsculas (ej. `ZOOM26`).
+*   Inserta el registro de la sala en `Salas`, registra al Host en `ParticipantesSala` con estado `'ACTIVO'` y responde con la misma trama `CREATE_ROOM`, `message: "SUCCESS"` y el `roomCode` generado.
+*   El cliente del Host transiciona al panel de sala de espera.
 
 ### Solicitud de Unión
-Un participante invitado introduce el código de 6 caracteres y presiona "Unirse". El servidor recibe la trama `JOIN_ROOM_REQUEST` y realiza las siguientes comprobaciones relacionales en Supabase:
-1.  Verifica que el código de la sala exista y que su estado sea `'ACTIVA'`.
-2.  Inserta una solicitud con estado inicial `'PENDIENTE'` en la tabla `SolicitudesSala`.
-3.  Asocia el canal del socket del invitado en una lista de espera en memoria y le envía una trama de confirmación, transicionando su UI en Swing a una pantalla de espera.
+Un participante invitado introduce el código de 6 caracteres y presiona "Unirse". El servidor recibe `JOIN_ROOM_REQUEST` y realiza las siguientes comprobaciones:
+1.  Verifica que el código exista y que su estado sea `'ACTIVA'`.
+2.  Inserta una solicitud con estado `'PENDIENTE'` en `SolicitudesSala`.
+3.  Responde `JOIN_ROOM_RESPONSE` con `"PENDIENTE"`, notifica al Host con `WAITING_ROOM_UPDATE` y deja al invitado en pantalla de espera.
 
 ---
 
@@ -865,13 +887,13 @@ La admisión diferida asegura el control total del anfitrión sobre quién ingre
 *   El panel de moderación del Host repobla dinámicamente un componente visual de Swing (`JList`) con la lista actualizada de candidatos.
 
 ### Moderación de Candidatos
-*   El Host puede hacer clic en **Admitir** o **Rechazar**. El cliente emite la trama `ADMIT_USER`.
-*   El servidor recibe la decisión, actualiza la tabla `SolicitudesSala` y notifica al socket del invitado objetivo.
-    *   Si fue **admitido**, el estado pasa a `'INVITADO_ADMITIDO'` y su pantalla muestra el mensaje: *"Esperando inicio del Host"*.
-    *   Si fue **rechazado**, el estado pasa a `'RECHAZADO'` y el cliente cierra el canal de red regresándolo al panel de inicio.
+*   El Host puede hacer clic en **Admitir** o **Rechazar**. El cliente emite `ADMIT_USER` con `message: "ACEPTAR"` o `"RECHAZAR"`.
+*   El servidor actualiza `SolicitudesSala` a `'ACEPTADO'` o `'RECHAZADO'` y notifica al invitado con `ADMIT_USER` y `message: "ACCEPTED"` o `"REJECTED"`.
+    *   Si fue **admitido**, la UI pasa al card `INVITADO_ADMITIDO` con el mensaje *"Esperando inicio del Host"* (estado visual; en BD permanece `'ACEPTADO'`).
+    *   Si fue **rechazado**, el cliente regresa al panel de inicio.
 
 ### Inicio Sincronizado de la Reunión
-Cuando el Host presiona **Iniciar Reunión**, se emite `START_MEETING_REQUEST`. El servidor registra a todos los invitados aprobados en la tabla `ParticipantesSala` con el estado `'ACTIVO'` y difunde la señal de inicio general. Los clientes Swing de los participantes reciben la señal y conmutan de forma simultánea (mediante `CardLayout`) de la pantalla de espera a la pantalla de reunión activa.
+Cuando el Host presiona **Iniciar Reunión**, se emite `START_MEETING_REQUEST`. El servidor valida que el emisor sea el Host y difunde `MEETING_STARTED` al Host y a los usuarios en `ParticipantesSala` con estado `'ACTIVO'`. Los clientes que reciben la señal ejecutan `procesarMeetingStarted()` y conmutan al card `REUNION`.
 
 ---
 
@@ -880,7 +902,10 @@ Cuando el Host presiona **Iniciar Reunión**, se emite `START_MEETING_REQUEST`. 
 El chat grupal combina la distribución asíncrona por red TCP con la persistencia relacional en Supabase y una experiencia de navegación interactiva basada en el patrón **Memento**.
 
 ### Transmisión y Persistencia del Chat
-Cuando un participante envía un mensaje, el cliente transmite `CHAT_MESSAGE`. El servidor intercepta la trama, llama a `DBProxy.guardarMensaje(...)` para insertar el registro en la tabla `Mensajes` y retransmite el JSON a todos los participantes activos en la sala.
+Cuando un participante envía un mensaje, el cliente transmite `CHAT_MESSAGE`. El servidor intercepta la trama, llama a `DBProxy.guardarMensaje(...)` para insertar el registro en `Mensajes` y retransmite el JSON a todos los participantes activos en la sala.
+
+### Carga del Historial (`REQUEST_HISTORY`)
+Al entrar a la reunión (`entrarAReunion()`), el cliente envía `CHAT_MESSAGE` con `message: "REQUEST_HISTORY"`. El servidor consulta el historial en Supabase y reenvía cada mensaje previo como trama `CHAT_MESSAGE` individual al solicitante, sin persistir ni difundir ese comando especial.
 
 ### Navegación del Historial de Entrada (Patrón Memento)
 En el cliente, para facilitar la redacción y permitir al usuario navegar entre sus borradores escritos previamente, se implementa el patrón **Memento** en el listener de teclado de la caja de texto (`JTextField`):
@@ -917,14 +942,14 @@ El servidor recibe las tramas, decodifica los bloques y escribe directamente al 
 
 ### Listado y Descarga Segura (Download)
 *   **Catálogo:** Al abrir la pestaña de archivos, el cliente envía `GET_FILES_REQUEST` y recibe la lista de archivos disponibles indexados en la base de datos para esa sala.
-*   **Descarga:** Al hacer clic en descargar, el cliente emite la trama `FILE_DOWNLOAD_REQUEST` con la ruta física del archivo. 
-*   **Seguridad:** El servidor valida que el archivo resida estrictamente dentro de la ruta del directorio `uploads/` resolviendo las rutas canónicas del sistema de archivos para evitar ataques de inyección de directorios:
+*   **Descarga:** Al hacer clic en descargar, el cliente emite `FILE_DOWNLOAD_REQUEST` con la ruta relativa del archivo en `uploads/`.
+*   **Seguridad:** El servidor valida que el archivo resida estrictamente dentro de `uploads/` resolviendo rutas canónicas:
     ```java
     if (!file.getCanonicalPath().startsWith(new File(DIRECTORIO_UPLOADS).getCanonicalPath())) {
         throw new SecurityException("Acceso denegado: Directory Traversal detectado");
     }
     ```
-*   **Transmisión:** El servidor arranca un hilo independiente que lee el archivo y lo envía en chunks al cliente, incorporando un retraso controlado de 10 ms por chunk para evitar la congestión del canal TCP.
+*   **Transmisión:** El servidor arranca un hilo independiente que envía el archivo con `FILE_START`, `FILE_CHUNK` y `FILE_END`, con retraso de 10 ms por chunk.
 
 ---
 
@@ -970,6 +995,8 @@ Se diseñó una matriz de pruebas de caja negra y caja blanca para verificar el 
 | **TC-04** | Chat en Tiempo Real | Host e Invitado en la sala activa de la reunión. | El invitado redacta un mensaje de texto y presiona la tecla Enter. | El mensaje se almacena en la tabla `Mensajes` y se visualiza en los chats de todos los miembros en menos de 100 ms. |
 | **TC-05** | Envío de Archivos | Miembros en sala activa. Se selecciona un archivo de 2 MB en el cliente. | Se hace clic en "Compartir Archivo" y se inicia la transferencia fragmentada en chunks. | El archivo físico se escribe en `uploads/` del servidor, sus metadatos se guardan en Supabase y el chat muestra la alerta de disponibilidad. |
 | **TC-06** | Transmisión de Cámara | Miembro de sala activa presiona "Encender Cámara". Sin webcam física disponible. | Se llama al método `start()` del `CameraProxy`. | El proxy intercepta el fallo de hardware e inicializa la transmisión simulada, pintando gradientes e información en la cuadrícula de los demás clientes. |
+| **TC-07** | Registro de Usuario | Correo no registrado previamente. | Completar formulario en `RegisterFrame` y enviar `REGISTER_REQUEST`. | Respuesta `REGISTER_RESPONSE` con `"SUCCESS"`; el usuario puede iniciar sesión. |
+| **TC-08** | Integración Headless | Servidor activo en puerto 5000. | Ejecutar `IntegrationTestRunner`: login Host → crear sala → login Guest → unirse → chat. | Flujo completo sin UI; mensajes de chat recibidos por ambos sockets. |
 
 ---
 
@@ -992,10 +1019,14 @@ Si el canal se interrumpe físicamente (caída de internet, apagado de la máqui
 ### Acciones de Limpieza y Recuperación en el Servidor
 Al ejecutarse `desconectar()`, el servidor orquesta las siguientes tareas de saneamiento de forma síncrona:
 *   **Liberación de Memoria (Mapas Concurrentes):** Remueve la clave del usuario del mapa concurrente de conexiones activas (`MainServidor.clientesActivos.remove(userId)`), liberando el socket y evitando envíos a sockets rotos.
-*   **Actualización de Estado en Persistencia:** Llama a la base de datos Supabase para transicionar el estado de la solicitud del usuario en `SolicitudesSala` a `'RECHAZADO'` o `'SALIO'`.
-*   **Notificación a la Reunión (Broadcast):** Difunde un mensaje del sistema al chat de la sala: *"El usuario [Nombre] se ha desconectado"*.
-*   **Saneamiento de Canales de Video:** Emite una trama `CAMERA_STATE` con valor `"OFF"` para que los demás clientes destruyan el componente de visualización correspondiente al usuario desconectado.
-*   **Cierre de Sockets:** Cierra los streams de entrada/salida y el canal del socket (`socketCliente.close()`), liberando el puerto del sistema operativo.
+*   **Actualización de Estado en Persistencia:** Si el usuario estaba en una sala, actualiza su solicitud en `SolicitudesSala` a `'RECHAZADO'`.
+*   **Notificación a la Reunión (Broadcast):** Difunde `LEAVE_ROOM` a los demás miembros, un mensaje de sistema por chat (*"[Nombre] se ha desconectado"*) y una trama `CAMERA_STATE` con valor `"OFF"`.
+*   **Cierre de Sockets:** Cierra el canal del socket (`socketCliente.close()`), liberando el puerto del sistema operativo.
+
+### Pruebas Automatizadas Headless
+El paquete `poo.cliente` incluye utilidades de integración sin interfaz gráfica:
+*   **`IntegrationTestRunner`:** Simula Host e Invitado en hilos paralelos (login, creación de sala, admisión y chat).
+*   **`TestHeadlessClient`:** Cliente mínimo para validar conectividad y protocolo sin Swing.
 
 ---
 
@@ -1005,52 +1036,39 @@ El sistema emite trazas detalladas en la terminal de comandos que demuestran la 
 
 ### Consola del Servidor de Sockets:
 ```text
-[*] Servidor de sockets LP2-Zoom iniciado en el puerto 5000...
-[*] Esperando conexiones de clientes...
+=========================================
+   INICIANDO SERVIDOR ZOOM SOCKETS
+=========================================
+[OK] Servidor escuchando en el puerto 5000...
 
 [*] Cliente conectado físicamente desde: /127.0.0.1:58432
 [CachedThreadPool] Hilo asignado para administrar la sesión del cliente.
 
-[<-] Recibida trama: LOGIN_REQUEST para usuario: host@zoom.com
-[PROXY-DATABASE] Inicializando base de datos Supabase JDBC de forma perezosa...
-[PROXY-DATABASE] Ejecutando: login("host@zoom.com", "********")
-[OK] Inicio de sesión exitoso. Usuario ID: 1, Rol: HOST.
-[->] Enviada trama: LOGIN_RESPONSE con estado SUCCESS a usuario ID: 1
+[*] Intento de login para: host@zoom.com
+[DB Proxy Logging] Intento de login para correo: host@zoom.com
+[DB Proxy] Inicialización perezosa de la base de datos (Virtual Proxy)...
+[DB] Nueva conexión física establecida con Supabase.
+[OK] Login exitoso. Usuario ID: 1
 
-[<-] Recibida trama: CREATE_ROOM para host ID: 1
-[PROXY-DATABASE] Ejecutando: crearSala("ZOOM26", "Reunión de Ingeniería", 1)
-[OK] Sala ZOOM26 registrada con éxito.
-[->] Enviada trama: CREATE_ROOM_RESPONSE con código: ZOOM26 al Host
+[*] Creando sala ZOOM26 solicitada por Host ID: 1
+[OK] Sala creada con éxito: ZOOM26
 
 [*] Cliente conectado físicamente desde: /127.0.0.1:58450
-[<-] Recibida trama: JOIN_ROOM_REQUEST de invitado ID: 2
-[PROXY-DATABASE] Ejecutando: solicitarUnirseASala("ZOOM26", 2)
-[->] Actualizando sala de espera. Notificando al Host (ID: 1) via WAITING_ROOM_UPDATE
+[*] Usuario Invitado De Prueba (ID: 2) solicita unirse a sala: ZOOM26
+[OK] Solicitud registrada como PENDIENTE para Invitado De Prueba
+[->] Enviada actualización de sala de espera al Host (ID: 1)
 
-[<-] Recibida trama: ADMIT_USER desde Host (ID: 1) para Invitado (ID: 2) -> Acción: ACEPTAR
-[PROXY-DATABASE] Ejecutando: actualizarEstadoSolicitud("ZOOM26", 2, "ACEPTADO")
-[->] Retransmitiendo admisión al socket del Invitado (ID: 2)
+[*] Host (ID: 1) actualizó solicitud de Invitado ID: 2 a: ACEPTADO
 
-[<-] Recibida trama: START_MEETING_REQUEST desde Host (ID: 1)
-[PROXY-DATABASE] Ejecutando: agregarParticipante("ZOOM26", 2)
-[->] Difundiendo inicio de reunión a todos los clientes de la sala.
+[OK] Reunión iniciada en sala ZOOM26 por host ID 1. Participantes notificados: 1
 
 [*] Iniciando recepción de archivo: manual.pdf (FileId: 8ef621)
-[*] Escribiendo chunk en uploads/8ef621_manual.pdf...
-[*] Escribiendo chunk en uploads/8ef621_manual.pdf...
 [OK] Archivo recibido por completo. Guardando metadatos.
-[PROXY-DATABASE] Ejecutando: guardarArchivo("ZOOM26", 2, "manual.pdf", "uploads/8ef621_manual.pdf")
-[->] Difundiendo mensaje de alerta de descarga en el chat de la sala.
 
-[<-] Recibida trama: CAMERA_STATE "ON" para usuario ID: 2
-[->] Retransmitiendo flujo de video CAMERA_FRAME (Size: 12 KB, Base64 JPEG)
-[->] Retransmitiendo flujo de video CAMERA_FRAME (Size: 11 KB, Base64 JPEG)
+[CHAT] Mensaje recibido de Invitado De Prueba en sala ZOOM26: Hola a todos
 
-[-] Socket físico cerrado abruptamente por lectura null (Desconexión de red).
 [-] Usuario Invitado De Prueba (ID: 2) desconectado del registro.
-[PROXY-DATABASE] Ejecutando: actualizarEstadoSolicitud("ZOOM26", 2, "RECHAZADO")
-[->] Difundiendo desconexión de Invitado De Prueba a la sala ZOOM26.
-[->] Difundiendo CAMERA_STATE "OFF" para liberar paneles de video en la sala.
+[->] Difundiendo LEAVE_ROOM y CAMERA_STATE OFF para Invitado De Prueba en sala ZOOM26.
 ```
 
 ---
@@ -1065,13 +1083,16 @@ Este capítulo consolida los aprendizajes técnicos y de diseño obtenidos duran
 
 El desarrollo del sistema desde cero empleando la biblioteca estándar de Java SE ha consolidado conocimientos profundos de la arquitectura de software:
 
-*   **Los Patrones de Diseño como Solución a Problemas Reales:** La implementación de los seis patrones demostró que los patrones no son solo estructuras teóricas, sino soluciones de ingeniería a problemas de red y responsabilidad de clases:
-    *   **Singleton y Bridge:** Resolvieron la reutilización del socket físico y desacoplaron el contrato de transporte (TCP Sockets) del formato de datos (JSON), facilitando la migración del codificador de red.
-    *   **Strategy y Factory Method:** Habilitaron la sustitución de código en tiempo de ejecución. Permitieron que las vistas del cliente y los hilos del servidor dependieran de abstracciones polimórficas (cámara y base de datos) en lugar de implementaciones rígidas.
-    *   **Proxy:** Se consolidó como una herramienta indispensable de control, abstrayendo a la interfaz Swing de lidiar con excepciones de carga (lazy-load en base de datos) o fallos críticos en el arranque de hardware (cámara física).
-    *   **Memento:** Permitió capturar de forma elegante el historial de borradores redactados en la UI sin exponer ni comprometer la privacidad interna de los componentes del texto.
-*   **Comprensión de la Red TCP Subyacente:** Escribir y leer bytes sobre un canal socket obligó a entender el comportamiento de los flujos continuos de datos en red, los límites del buffer TCP del sistema operativo y la necesidad de delimitadores físicos (`\n`) para las tramas.
-*   **Gestión Segura del Desacoplamiento de Hilos:** Se dominó la coordinación asíncrona entre el Event Dispatch Thread (EDT) de Java Swing (responsable del renderizado de la UI) y los hilos secundarios de lectura de socket, garantizando interfaces fluidas y libres de bloqueos físicos.
+*   **Los Patrones de Diseño como Solución a Problemas Reales:** La implementación de los seis patrones GOF más el callback Observer demostró que los patrones resuelven problemas concretos de red y responsabilidad de clases:
+    *   **Singleton y Bridge:** Resolvieron la reutilización del socket físico y desacoplaron el contrato de transporte (TCP Sockets) del formato de datos (JSON).
+    *   **Observer:** Permitió que las pantallas Swing reaccionen a tramas entrantes sin acoplar `ClienteConexion` a componentes visuales concretos.
+    *   **Strategy y Factory Method:** Habilitaron la sustitución polimórfica de persistencia (BD) y captura de video (cámara física vs. simulador).
+    *   **Proxy:** Abstrajo lazy-load en base de datos, auditoría de consultas, fallback de cámara y conexión JDBC persistente en `ConexionBD`.
+    *   **Memento:** Capturó el historial de borradores del chat sin violar la encapsulación del campo de texto.
+*   **Comprensión de la Red TCP Subyacente:** Escribir y leer bytes sobre un canal socket obligó a entender flujos continuos, delimitadores `\n` y la necesidad de fragmentar binarios en JSON.
+*   **Gestión Segura del Desacoplamiento de Hilos:** Se coordinó el EDT de Swing con el hilo lector de socket y pools auxiliares (`videoDecoderExecutor`) para mantener la UI fluida.
+
+El proyecto alcanza el **100% de avance** en las seis fases funcionales documentadas en [fases.md](fases.md).
 
 ---
 
@@ -1079,9 +1100,12 @@ El desarrollo del sistema desde cero empleando la biblioteca estándar de Java S
 
 Durante el ciclo de vida del proyecto se superaron desafíos técnicos de alta complejidad:
 
-1.  **Exclusión Mutua y Sincronización en Concurrencia:** Coordinar el envío simultáneo de tramas de video, chat y estado de cámara requirió la sincronización estricta de los mapas globales (`clientesActivos`). Se debieron implementar colecciones concurrentes (`ConcurrentHashMap`) para evitar excepciones de modificación concurrente y condiciones de carrera en el servidor.
-2.  **Manejo de Librerías Nativas y Dependencias de Hardware:** La captura de video real mediante webcam requirió compilar el proyecto incluyendo la biblioteca `webcam-capture` y su runtime nativo `bridj`. Al ejecutar en Windows, resolver la carga correcta de las DLLs nativas de captura y mitigar fallos en equipos sin cámara física requirió estructurar el Proxy con un mecanismo de fallback automático a simulación.
-3.  **Transferencia de Binarios sobre Protocolos Textuales (JSON):** Cargar archivos completos en memoria para enviarlos en una sola trama JSON causaba desbordamientos de memoria de la JVM (*OutOfMemoryError*). Fragmentar los binarios en bloques de 64 KB, codificarlos a Base64, gestionar el delay de 10 ms para no saturar los buffers del socket y consolidarlos físicamente en el servidor controlando la seguridad de rutas (*Directory Traversal*) representó el reto de integración más arduo del proyecto.
+1.  **Exclusión Mutua y Sincronización en Concurrencia:** Coordinar el envío simultáneo de tramas de video, chat y estado de cámara requirió colecciones concurrentes (`ConcurrentHashMap`) en el servidor para evitar condiciones de carrera.
+2.  **Manejo de Librerías Nativas y Dependencias de Hardware:** La captura de video real mediante `webcam-capture` y su runtime nativo (`bridj`/JNA) exigió fallback automático al simulador. En Windows, se mitigó el bloqueo DirectShow con timeout de captura, filtro de dispositivos virtuales y escalado en memoria con `Graphics2D` (sin `setViewSize` nativo).
+3.  **Transferencia de Binarios sobre Protocolos Textuales (JSON):** Fragmentar en bloques de 64 KB, codificar a Base64, aplicar delay de 10 ms entre chunks y validar rutas canónicas en descarga representó el reto de integración más arduo.
+4.  **Latencia JDBC con Supabase Cloud:** El handshake SSL repetido ralentizaba cada consulta; se resolvió con conexión singleton en `ConexionBD` y proxy que ignora `close()`.
+5.  **Bloqueo del Hilo Lector por Video:** Decodificar JPEG en el hilo de red degradaba el chat; se mitigó con `videoDecoderExecutor` en `RoomFrame`.
+6.  **Paneles de Video Huérfanos y Desconexiones:** Se implementó `LEAVE_ROOM`, limpieza de paneles al salir y emisión de `CAMERA_STATE "OFF"` en desconexiones abruptas.
 
 ---
 
@@ -1108,54 +1132,62 @@ La distribución modular del proyecto divide de manera física la interfaz y red
 
 ```text
 LP2-Zoom/
+├── docs/                         # Documentación técnica (informe, arquitectura, endpoints, fases, etc.)
+├── uploads/                      # Archivos compartidos en runtime (generado por el servidor)
+├── bin_servidor/                 # Clases compiladas del servidor (ejecución rápida)
+├── db/
+│   └── schema.sql                # Esquema SQL maestro del proyecto
 ├── Cliente/                      # Módulo del Cliente (UI + Conexión)
-│   ├── pom.xml                   # Configuración Maven de dependencias del Cliente
+│   ├── pom.xml                   # Dependencias: Gson, webcam-capture, JNA, SLF4J
 │   └── src/main/java/
 │       ├── model/
-│       │   └── MensajeSocket.java # Modelo de datos del protocolo JSON
+│       │   └── MensajeSocket.java
 │       ├── network/
-│       │   ├── ClienteConexion.java # Gestor de sockets (Singleton + Bridge Abstraction)
+│       │   ├── ClienteConexion.java   # Singleton + Bridge + MensajeListener
 │       │   ├── bridge/
-│       │   │   ├── ProtocolBridge.java # Interfaz del implementador del Bridge
-│       │   │   └── JSONProtocolBridge.java # Implementador concreto JSON del Bridge
-│       │   └── camera/
-│       │       ├── CameraStrategy.java # Interfaz del Strategy de la cámara
-│       │       ├── PhysicalCameraStrategy.java # Estrategia concreta: Webcam real
-│       │       ├── SimulatedCameraStrategy.java # Estrategia concreta: Simulación visual
-│       │       ├── CameraCreator.java # Creador base del Factory Method
-│       │       ├── PhysicalCameraCreator.java # Creador concreto de cámara real
-│       │       ├── SimulatedCameraCreator.java # Creador concreto de simulación
-│       │       └── CameraProxy.java # Proxy intermedio (Virtual, Logging, Fallback)
+│       │   │   ├── ProtocolBridge.java
+│       │   │   └── JSONProtocolBridge.java
+│       │   └── camera/                # Strategy + Factory Method + Proxy (video)
+│       │       ├── CameraStrategy.java
+│       │       ├── PhysicalCameraStrategy.java
+│       │       ├── SimulatedCameraStrategy.java
+│       │       ├── CameraCreator.java
+│       │       ├── PhysicalCameraCreator.java
+│       │       ├── SimulatedCameraCreator.java
+│       │       └── CameraProxy.java
+│       ├── poo/cliente/
+│       │   ├── IntegrationTestRunner.java  # Pruebas headless de integración
+│       │   └── TestHeadlessClient.java
 │       └── UI/
-│           ├── LoginFrame.java   # Ventana de autenticación
-│           ├── RoomFrame.java    # Ventana de salas (Reunión activa + Originator Memento)
+│           ├── LoginFrame.java
+│           ├── RegisterFrame.java
+│           ├── RoomFrame.java
 │           └── memento/
-│               ├── ChatInputMemento.java # Memento para guardar borrador de texto
-│               └── ChatHistoryCaretaker.java # Caretaker del historial de entrada
-├── Servidor/                     # Módulo del Servidor (Lógica de sockets + Persistencia)
-│   ├── pom.xml                   # Configuración Maven del Servidor
+│               ├── ChatInputMemento.java
+│               └── ChatHistoryCaretaker.java
+├── Servidor/                     # Módulo Servidor (Sockets + Persistencia)
+│   ├── pom.xml
 │   └── src/main/
 │       ├── java/
 │       │   ├── database/
-│       │   │   ├── ConexionBD.java # Proveedor de conexión JDBC a Supabase
-│       │   │   ├── DBStrategy.java # Interfaz del Strategy de persistencia
-│       │   │   ├── DBService.java # Estrategia concreta que ejecuta SQL en Supabase (JDBC)
-│       │   │   ├── DBCreator.java # Creador base del Factory Method de BD
-│       │   │   ├── SupabaseDBCreator.java # Creador concreto de la persistencia Supabase
-│       │   │   ├── DBProxy.java # Proxy de base de datos (Lazy-init y Logging)
-│       │   │   └── HashUtils.java # Hasheador de contraseñas (SHA-256)
+│       │   │   ├── ConexionBD.java    # Singleton JDBC + proxy dinámico close()
+│       │   │   ├── DBStrategy.java
+│       │   │   ├── DBService.java
+│       │   │   ├── DBCreator.java
+│       │   │   ├── SupabaseDBCreator.java
+│       │   │   ├── DBProxy.java
+│       │   │   └── HashUtils.java
 │       │   ├── model/
 │       │   │   ├── MensajeSocket.java
 │       │   │   └── Usuario.java
 │       │   └── network/
-│       │       ├── MainServidor.java # Servidor principal (ServerSocket)
-│       │       └── ManejadorCliente.java # Hilo dedicado a cada conexión de cliente
+│       │       ├── MainServidor.java
+│       │       └── ManejadorCliente.java
 │       └── resources/
-│           ├── config.properties # Credenciales de base de datos Supabase
+│           ├── config.properties
 │           └── database/
-│               └── schema.sql    # Respaldo local de esquema SQL
-└── db/
-    └── schema.sql                # Esquema físico SQL maestro del proyecto
+│               └── schema.sql
+└── README.md
 ```
 
 ---
@@ -1165,12 +1197,13 @@ LP2-Zoom/
 Se adjuntan las firmas y definiciones esenciales que materializan los patrones de diseño del proyecto, utilizando los nombres de métodos correctos sincronizados con la base de código (`serialize` / `deserialize`):
 
 ### 1. Interfaz del Strategy de Base de Datos y su Fábrica
-*   **Archivos:** [DBStrategy.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Servidor/src/main/java/database/DBStrategy.java) y [DBCreator.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Servidor/src/main/java/database/DBCreator.java)
+*   **Archivos:** [DBStrategy.java](../Servidor/src/main/java/database/DBStrategy.java) y [DBCreator.java](../Servidor/src/main/java/database/DBCreator.java)
 ```java
 // Interfaz de Estrategia para persistencia
 public interface DBStrategy {
     Usuario login(String correo, String password);
     boolean registrar(String nombres, String correo, String password, String rol);
+    boolean existeCorreo(String correo);
     boolean crearSala(String codigoSala, String nombre, int idHost);
     int obtenerIdSalaPorCodigo(String codigoSala);
     int obtenerHostIdPorCodigo(String codigoSala);
@@ -1192,7 +1225,7 @@ public abstract class DBCreator {
 ```
 
 ### 2. Implementación del Proxy de Base de Datos (Lazy-load & Logging)
-*   **Archivo:** [DBProxy.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Servidor/src/main/java/database/DBProxy.java)
+*   **Archivo:** [DBProxy.java](../Servidor/src/main/java/database/DBProxy.java)
 ```java
 public class DBProxy implements DBStrategy {
     private final DBCreator creator;
@@ -1202,25 +1235,25 @@ public class DBProxy implements DBStrategy {
         this.creator = creator;
     }
 
-    private synchronized void ensureDatabaseInitialized() {
+    private synchronized DBStrategy getRealSubject() {
         if (realSubject == null) {
-            System.out.println("[PROXY-DATABASE] Inicializando base de datos Supabase JDBC de forma perezosa...");
+            System.out.println("[DB Proxy] Inicialización perezosa de la base de datos (Virtual Proxy)...");
             realSubject = creator.createDatabase();
         }
+        return realSubject;
     }
 
     @Override
     public Usuario login(String correo, String password) {
-        ensureDatabaseInitialized();
-        System.out.println("[PROXY-DATABASE] Ejecutando: login(" + correo + ", *****)");
-        return realSubject.login(correo, password);
+        System.out.println("[DB Proxy Logging] Intento de login para correo: " + correo);
+        return getRealSubject().login(correo, password);
     }
     // ... Delegación auditada de los demás métodos del contrato
 }
 ```
 
 ### 3. Patrón Bridge en el Canal de Comunicación del Cliente
-*   **Archivos:** [ProtocolBridge.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/bridge/ProtocolBridge.java) y [JSONProtocolBridge.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/network/bridge/JSONProtocolBridge.java)
+*   **Archivos:** [ProtocolBridge.java](../Cliente/src/main/java/network/bridge/ProtocolBridge.java) y [JSONProtocolBridge.java](../Cliente/src/main/java/network/bridge/JSONProtocolBridge.java)
 ```java
 // Interfaz Implementadora del Bridge
 public interface ProtocolBridge {
@@ -1245,7 +1278,7 @@ public class JSONProtocolBridge implements ProtocolBridge {
 ```
 
 ### 4. Patrón Memento para Historial de Escritura de Chat
-*   **Archivos:** [ChatInputMemento.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/UI/memento/ChatInputMemento.java) y [ChatHistoryCaretaker.java](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/Cliente/src/main/java/UI/memento/ChatHistoryCaretaker.java)
+*   **Archivos:** [ChatInputMemento.java](../Cliente/src/main/java/UI/memento/ChatInputMemento.java) y [ChatHistoryCaretaker.java](../Cliente/src/main/java/UI/memento/ChatHistoryCaretaker.java)
 ```java
 // Memento Inmutable
 public class ChatInputMemento {
