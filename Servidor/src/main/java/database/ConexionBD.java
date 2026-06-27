@@ -12,13 +12,17 @@ public class ConexionBD {
 
     private static synchronized void loadProps() throws SQLException {
         if (props == null) {
-            props = new Properties();
+            Properties tempProps = new Properties();
             try (InputStream is = ConexionBD.class.getClassLoader()
                     .getResourceAsStream("config.properties")) {
-                props.load(is);
+                if (is == null) {
+                    throw new SQLException("El archivo config.properties no se encontro en el classpath.");
+                }
+                tempProps.load(is);
             } catch (Exception e) {
                 throw new SQLException("No se pudo leer config.properties", e);
             }
+            props = tempProps;
         }
     }
 

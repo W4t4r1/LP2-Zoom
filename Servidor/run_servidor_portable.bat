@@ -16,5 +16,5 @@ echo [OK] Compilacion exitosa.
 echo.
 echo [*] Iniciando servidor de sockets en el puerto 5000...
 echo.
-java -cp "out;lib/*" network.MainServidor
+java -cp "out;src/main/resources;lib/*" network.MainServidor
 pause
