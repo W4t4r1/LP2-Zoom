@@ -1,117 +1,72 @@
-# Guion de Exposición Detallado por Diapositiva: Caso de Uso Principal (LP2-Zoom)
+# Guion de Exposición Detallado: Caso de Uso "Admitir / Rechazar Invitados" (CU-02)
 
-Este guion está optimizado para una presentación de **6 minutos** sincronizada diapositiva por diapositiva con el archivo **[presentacion_caso_uso.pptx](file:///c:/Users/lorox/OneDrive/Desktop/LP2-Zoom/LP2-Zoom/docs/presentacion_caso_uso.pptx)**.
-
----
-
-## RESUMEN DE TIEMPOS Y EXPOSITORES
-
-*   **Diapositivas 1 a 4:** Marco Huanca (Minuto 0:00 - 2:00)
-*   **Diapositivas 5 a 8:** Jonathan Leon (Minuto 2:00 - 4:00)
-*   **Diapositivas 9 a 11:** Jeanpier Robles (Minuto 4:00 - 6:00)
+Este guion de exposición está diseñado para durar **6 minutos** en total y divide la explicación de la ficha técnica de moderación en sala de espera de **LP2-Zoom** de forma equitativa entre **3 personas**.
 
 ---
 
-## EXPOSITOR 1: MARCO HUANCA (MINUTO 0:00 - 2:00)
-
-### Diapositiva 1: Portada
-*   **Título en Pantalla:** LP2-ZOOM - Caso de Uso Principal: Gestión de Admisión y Videoconferencia en Tiempo Real
-*   **Tiempo:** [0:00 - 0:30]
-*   **Visual:** Pantalla de bienvenida en modo oscuro con nombres de los integrantes y logo del curso.
-*   **Narración (Voz en off):**
-    > *"Buenas tardes, docente y compañeros. Hoy les presentaremos la especificación técnica del caso de uso principal y más crítico de nuestro proyecto **LP2-Zoom**, titulado: 'Gestión de Sala de Espera, Admisión e Inicio de Videoconferencia en Tiempo Real'. Mi grupo está conformado por Jonathan Leon, Jeanpier Robles y quien les habla, Marco Huanca. El núcleo de este proyecto no recae en usar frameworks o servidores web embebidos de alto nivel, sino en construir un sistema concurrente distribuido de baja latencia utilizando Sockets TCP nativos en Java SE y base de datos en la nube."*
+## RESUMEN DE COMPARTICIÓN
+1. **Expositor 1: Marco Huanca** (Introducción, Ficha del CU, Objetivos, Precondiciones y Postcondiciones)
+2. **Expositor 2: Jonathan Leon** (Flujo de Eventos: Escenario Principal y Flujo Alternativo de Rechazo)
+3. **Expositor 3: Jeanpier Robles** (Reglas de Negocio, Datos de Entrada/Salida, Excepciones y Conclusiones)
 
 ---
 
-### Diapositiva 2: 1. Introducción al Caso de Uso
-*   **Título en Pantalla:** 1. Introducción al Caso de Uso (¿Por qué es el flujo central?)
-*   **Tiempo:** [0:30 - 1:00]
-*   **Visual:** Viñetas detallando la integración completa y la regla de oro.
-*   **Narración (Voz en off):**
-    > *"Este caso de uso representa la columna vertebral del prototipo por tres razones fundamentales. Primero, integra todos los componentes y capas del sistema: el cliente gráfico Swing, el protocolo por sockets TCP, el pool concurrente del servidor y la base de datos de Supabase. Segundo, modela la transición de estados interactiva de los usuarios desde la selección de rol hasta la reunión activa. Y tercero, nos permite validar en un escenario real la regla de oro de aislamiento de persistencia de datos en sistemas distribuidos cliente-servidor."*
+## PARTE 1: FICHA TÉCNICA, ACTORES Y CONDICIONES
+### **Expositor 1: Marco Huanca (Minuto 0:00 - 2:00)**
+
+*   **Pacing:** Claro, introductorio, sentando las bases del caso de uso.
+*   **Apoyo Visual sugerido:** Diapositiva con los datos de la ficha técnica, los actores y las condiciones.
+
+> **[0:00 - 0:45] Introducción y Ficha Técnica**
+> *"Buenas tardes, docente y compañeros. Hoy detallaremos la especificación formal del caso de uso principal de nuestro proyecto **LP2-Zoom**, denominado **CU-02: Admitir / Rechazar Invitados**. 
+> Este caso de uso asocia de forma íntegra a los dos actores de nuestra aplicación distribuida: el **Anfitrión (Host)**, que modera las peticiones; y el **Invitado (Guest)**, que postula para ingresar a la sala. El objetivo principal de este flujo es permitir al Anfitrión moderar el ingreso de los Invitados en sala de espera en tiempo real, decidiendo si aprueba o deniega su acceso antes de que inicie oficialmente la videoconferencia."*
+
+> **[0:45 - 1:30] Precondiciones y Postcondiciones**
+> *"Para que este caso de uso inicie de forma correcta, se deben cumplir dos precondiciones críticas. Primero, el Anfitrión debe haber creado una sala activa en el sistema y estar en el panel de espera del Host. Segundo, uno o más Invitados deben haber enviado una solicitud de unión con el código de 6 caracteres, quedando registrados en estado `'PENDIENTE'` en la tabla `SolicitudesSala` de Supabase.
+> Al finalizar de forma exitosa, la base de datos se actualiza: la solicitud cambia a estado `'ACCEPTED'` y el Invitado se inserta en `ParticipantesSala` como `'ACTIVO'`. Gráficamente, el Invitado transiciona al estado `'INVITADO_ADMITIDO'` y queda en espera de la orden de inicio oficial para cambiar de pantalla mediante `CardLayout`."*
+
+> **[1:30 - 2:00] Transición a los flujos**
+> *"Para conocer en detalle cómo viajan los mensajes JSON por el canal de socket y cómo interactúan las interfaces, daré paso a mi compañero Jonathan Leon, quien detallará el flujo de eventos principal y el escenario alternativo."*
 
 ---
 
-### Diapositiva 3: 2. Regla de Oro: Aislamiento de Persistencia
-*   **Título en Pantalla:** 2. Regla de Oro: Aislamiento de Persistencia
-*   **Tiempo:** [1:00 - 1:30]
-*   **Visual:** Esquema de aislamiento y seguridad (JDBC exclusivo del Servidor).
-*   **Narración (Voz en off):**
-    > *"Nuestra regla de oro establece que el cliente Swing jamás realiza conexiones JDBC directas ni almacena credenciales de la base de datos en su código local, lo que previene que sean vulneradas por ingeniería inversa o descompilación. En su lugar, toda transacción de moderación viaja cifrada y estructurada en formato JSON a través de sockets TCP persistentes hacia el Servidor. Este actúa como el middleware exclusivo de persistencia, aplicando criptografía SHA-256 a las contraseñas antes de interactuar de forma segura con Supabase."*
+## PARTE 2: FLUJO PRINCIPAL Y ESCENARIOS ALTERNATIVOS
+### **Expositor 2: Jonathan Leon (Minuto 2:00 - 4:00)**
+
+*   **Pacing:** Dinámico y descriptivo, centrado en el comportamiento de red y de la UI.
+*   **Apoyo Visual sugerido:** Diagrama de Secuencia y el paso a paso del flujo principal en pantalla.
+
+> **[2:00 - 3:00] Flujo Principal Paso a Paso**
+> *"Gracias, Marco. El flujo principal comienza cuando el Invitado solicita unirse enviando la trama `JOIN_ROOM_REQUEST`. El Servidor registra la solicitud en Supabase como `'PENDIENTE'` en la tabla `SolicitudesSala` y notifica al Anfitrión con una trama `WAITING_ROOM_UPDATE`. 
+> La interfaz del Anfitrión recibe la trama y actualiza de forma segura la lista gráfica `JList` con los nombres de los candidatos pendientes dentro del EDT de Swing mediante `SwingUtilities.invokeLater`.
+> El Anfitrión selecciona al Invitado y hace clic en 'Admitir'. Esto despacha una trama `ADMIT_USER` con el mensaje `'ACEPTAR'` por el socket TCP. 
+> El servidor recibe la trama, actualiza el registro en Supabase a `'ACCEPTED'`, inserta al participante en `ParticipantesSala` como `'ACTIVO'` y notifica al Invitado con la trama `ADMIT_USER` (`ACCEPTED`) para cambiar su interfaz a admitido."*
+
+> **[3:00 - 3:45] Flujos Alternativos**
+> *"El sistema también contempla la moderación de rechazos. Si el Anfitrión decide hacer clic en el botón 'Rechazar', el cliente envía la trama `ADMIT_USER` con el mensaje `'RECHAZAR'`. 
+> El servidor recibe el comando, actualiza el registro en la tabla `SolicitudesSala` a estado `'RECHAZADO'` en Supabase y le notifica al Invitado con la trama `ADMIT_USER` (`REJECTED`). El cliente del Invitado recibe la notificación, sale de la pantalla de bloqueo y regresa al selector principal con el mensaje 'Solicitud rechazada'."*
+
+> **[3:45 - 4:00] Transición a Reglas de Negocio**
+> *"Para sostener esta robusta lógica distribuida, el sistema aplica reglas estrictas de persistencia, tipado de datos y tolerancia a fallas. A continuación, mi compañero Jeanpier Robles detallará estas reglas y las excepciones técnicas."*
 
 ---
 
-### Diapositiva 4: 3. Diagrama de Casos de Uso (UML General)
-*   **Título en Pantalla:** 3. Diagrama de Casos de Uso (UML General)
-*   **Tiempo:** [1:30 - 2:00]
-*   **Visual:** Diagrama de Casos de Uso con los actores Anfitrión, Invitado y Servidor.
-*   **Narración (Voz en off):**
-    > *"Como se aprecia en nuestro Diagrama de Casos de Uso, el sistema separa de manera limpia las facultades de cada rol. El Anfitrión es el único con permisos para crear salas, moderar y admitir invitados en la sala de espera, y emitir la orden de inicio oficial. El Invitado solicita unirse mediante un código de 6 caracteres y queda retenido de forma segura en cola hasta ser admitido. Ambos convergen en los módulos comunes de la reunión activa, como el chat y la cámara. A continuación, mi compañero Jonathan Leon explicará los flujos dinámicos de red y la mensajería del protocolo."*
+## PARTE 3: REGLAS DE NEGOCIO, DATOS Y EXCEPCIONES
+### **Expositor 3: Jeanpier Robles (Minuto 4:00 - 6:00)**
 
----
+*   **Pacing:** Técnico, riguroso, enfocado en las reglas de la arquitectura del informe y la resiliencia.
+*   **Apoyo Visual sugerido:** Lista de reglas de negocio, estructura JSON de tramas y excepciones de red.
 
-## EXPOSITOR 2: JONATHAN LEON (MINUTO 2:00 - 4:00)
+> **[4:00 - 4:45] Reglas de Negocio y Datos**
+> *"Gracias, Jonathan. Para que este flujo sea mantenible y seguro, implementamos las **Reglas de Negocio** definidas en el reporte técnico del proyecto. 
+> La primera es la **Regla de Oro de Persistencia (RN-01)**: las credenciales de la base de datos no existen en el cliente; toda modificación de estados en `SolicitudesSala` y `ParticipantesSala` se realiza en el Servidor a través del proxy `DBProxy`. 
+> La segunda es la **Regla de Concurrencia de Swing (RN-02)**: las notificaciones asíncronas de red de tipo `WAITING_ROOM_UPDATE` se gestionan en segundo plano por el `HiloEscuchaCliente` y se pintan en la interfaz mediante `SwingUtilities.invokeLater()` para no bloquear el EDT gráfico.
+> Los datos de entrada y salida del protocolo viajan en objetos del tipo `MensajeSocket` serializados a JSON, con tipos como `JOIN_ROOM_REQUEST`, `WAITING_ROOM_UPDATE` y `ADMIT_USER`."*
 
-### Diapositiva 5: 4. El Protocolo: Tramas JSON sobre Sockets
-*   **Título en Pantalla:** 4. El Protocolo: Tramas JSON sobre Sockets
-*   **Tiempo:** [2:00 - 2:30]
-*   **Visual:** Estructura de la clase `MensajeSocket` con sus atributos JSON.
-*   **Narración (Voz en off):**
-    > *"Gracias, Marco. Para que esta comunicación distribuida funcione de forma integrada, diseñamos un protocolo estándar basado en tramas JSON estructuradas por la clase `MensajeSocket`. Cada paquete enviado cuenta con campos específicos: el atributo 'type' define el comando de negocio a ejecutar, 'roomCode' asocia el mensaje a la reunión correspondiente, 'userId' y 'userName' identifican al remitente, y 'message' transporta el texto del chat o los fragmentos de imagen de la webcam."*
+> **[4:45 - 5:30] Excepciones y Tolerancia a Fallos**
+> *"A nivel técnico, manejamos las excepciones de red descritas en la sección 7 de nuestro informe. 
+> La primera es la **Desconexión abrupta de un Invitado en espera (EX-01)**: si el socket del Invitado se cierra inesperadamente en cola, el Servidor captura la excepción de I/O, ejecuta `desconectar()` para liberar recursos, elimina la solicitud pendiente de `SolicitudesSala` y difunde una nueva trama `WAITING_ROOM_UPDATE` al Anfitrión para remover al candidato huérfano del `JList` visual de inmediato.
+> Esto garantiza que no queden solicitudes colgadas ni paneles de video vacíos."*
 
----
-
-### Diapositiva 6: 5. Diagrama de Secuencia: Admisión y Sesión
-*   **Título en Pantalla:** 5. Diagrama de Secuencia: Admisión y Sesión
-*   **Tiempo:** [2:30 - 3:00]
-*   **Visual:** Diagrama de Secuencia mostrando la mensajería entre Invitado, Servidor y Host.
-*   **Narración (Voz en off):**
-    > *"El Diagrama de Secuencia ilustra esta coreografía temporal de la red. Cuando el Invitado solicita unirse, envía un `JOIN_ROOM_REQUEST`. El servidor lo recibe, escribe el estado PENDIENTE en Supabase e informa al Host con una `WAITING_ROOM_UPDATE` para poblar su lista en el EDT de Swing. Cuando el Host da clic en 'Admitir', se despacha una trama `ADMIT_USER` con estado `ACCEPTED`, cambiando el estado del Invitado a admitido. Finalmente, al presionar 'Iniciar reunión', el servidor propaga simultáneamente la señal `MEETING_STARTED`, conmutando a todos a la reunión."*
-
----
-
-### Diapositiva 7: 6. Diagrama de Actividades: Flujo del Usuario
-*   **Título en Pantalla:** 6. Diagrama de Actividades: Flujo del Usuario
-*   **Tiempo:** [3:00 - 3:30]
-*   **Visual:** Diagrama de Actividades con los carriles de decisión de los usuarios.
-*   **Narración (Voz en off):**
-    > *"El ciclo de control se modela detalladamente en el Diagrama de Actividades. Tras validar el inicio de sesión del usuario en Supabase con hash SHA-256, el flujo se bifurca: el Host genera el código de sala e ingresa al ciclo de espera de candidatos, mientras que el Invitado introduce el código de 6 caracteres y queda en cola en estado PENDIENTE. Si es rechazado por el Host, regresa al selector inicial; si es aceptado, tras emitirse la señal de inicio de reunión, ambos hilos de ejecución convergen en la pantalla interactiva activando en paralelo el chat y la transmisión de video."*
-
----
-
-### Diapositiva 8: 7. Diagrama de Estados (CardLayout de Pantallas)
-*   **Título en Pantalla:** 7. Diagrama de Estados (CardLayout de Pantallas)
-*   **Tiempo:** [3:30 - 4:00]
-*   **Visual:** Máquina de estados visual del CardLayout (SELECTOR $\rightarrow$ HOST_WAITING/GUEST_PENDING $\rightarrow$ REUNION).
-*   **Narración (Voz en off):**
-    > *"Este comportamiento gráfico es controlado con precisión por un gestor `CardLayout` en la ventana principal del cliente. La interfaz transiciona entre 4 tarjetas bien definidas: `SELECTOR` para iniciar, `HOST_WAITING` para que el anfitrión administre la lista en tiempo real, `GUEST_PENDING` que bloquea la pantalla del invitado con una barra de progreso en espera de admisión, y la tarjeta unificada `REUNION`. Ahora, mi compañero Jeanpier Robles detallará los patrones de diseño aplicados y la arquitectura de concurrencia del sistema."*
-
----
-
-## EXPOSITOR 3: JEANPIER ROBLES (MINUTO 4:00 - 6:00)
-
-### Diapositiva 9: 8. Patrones de Diseño en la Admisión
-*   **Título en Pantalla:** 8. Patrones de Diseño en la Admisión
-*   **Tiempo:** [4:00 - 4:45]
-*   **Visual:** Nombres y justificaciones de Singleton, Bridge, Proxy y DBProxy.
-*   **Narración (Voz en off):**
-    > *"Gracias, Jonathan. Para dar soporte a esta arquitectura distribuida, aplicamos patrones de diseño orientados a objetos. El **Singleton** en `ClienteConexion` asegura una única instancia de conexión física abierta. El **Bridge** en `ProtocolBridge` separa la red física de la serialización JSON con Gson. Y el patrón **Proxy** se usa simétricamente: en el servidor, un `DBProxy` maneja la conexión JDBC con Lazy Loading y logs de auditoría; y en el cliente, un `CameraProxy` controla los permisos y realiza un fallback transparente a cámara simulada si el hardware de la webcam física está bloqueado o falla, previniendo congelamientos de pantalla."*
-
----
-
-### Diapositiva 10: 9. Arquitectura de Hilos (Swing EDT vs Red)
-*   **Título en Pantalla:** 9. Arquitectura de Hilos (Swing EDT vs Red)
-*   **Tiempo:** [4:45 - 5:30]
-*   **Visual:** Esquema de hilos mostrando EDT, HiloEscuchaCliente y pools de hilos secundarios.
-*   **Narración (Voz en off):**
-    > *"Uno de los mayores desafíos de Swing es que el Event Dispatch Thread, o EDT, es monocanal y cualquier lectura bloqueante de red lo congelaría por completo. Lo solucionamos implementando un hilo secundario independiente de escucha de sockets. Cuando este hilo recibe las tramas del servidor, delega la renderización gráfica de vuelta al EDT de manera segura usando `SwingUtilities.invokeLater(...)`. Asimismo, la decodificación de las imágenes en Base64 de la cámara corre en un pool de hilos daemon secundario (`videoDecoderExecutor`) para no entorpecer el flujo principal de la red."*
-
----
-
-### Diapositiva 11: 10. Tolerancia a Fallos y Conclusiones
-*   **Título en Pantalla:** 10. Tolerancia a Fallos y Conclusiones
-*   **Tiempo:** [5:30 - 6:00]
-*   **Visual:** Viñetas sobre desconexión abrupta y conclusiones del proyecto.
-*   **Narración (Voz en off):**
-    > *"El sistema es altamente tolerante a fallos: ante una desconexión abrupta de red de un cliente, el servidor captura la excepción física de I/O, libera de inmediato el socket físico, actualiza el estado de la sesión en Supabase a 'SALIÓ' y notifica a los demás clientes de la sala para apagar los feeds de video activos, evitando fugas de memoria. 
-    > En conclusión, la combinación de Sockets nativos y Patrones de Diseño nos permitió construir un software distribuido robusto, modular y altamente reutilizable, demostrando los beneficios de la programación a bajo nivel en entornos concurrentes. Con esto concluimos nuestra exposición. Quedamos atentos a sus preguntas. Muchas gracias."*
+> **[5:30 - 6:00] Conclusiones**
+> *"Como conclusiones, el caso de uso de moderación y admisión de **LP2-Zoom** demuestra que la combinación de Sockets nativos y Patrones de Diseño nos permite construir software concurrente distribuido seguro, robusto y modular. Muchas gracias."*
