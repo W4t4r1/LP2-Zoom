@@ -27,6 +27,10 @@ Para conocer a fondo el diseño, el contrato de datos o la configuración del en
 *   **[Contrato de Mensajería JSON](docs/endpoints.md):** Formato y ejemplos exactos de los payloads JSON utilizados sobre los sockets TCP para cada caso de negocio.
 *   **[Guía de Despliegue y Maven](docs/despliegue.md):** Configuración de variables, driver JDBC con SSL y comandos Maven para construir y ejecutar los archivos JAR.
 *   **[Control de Fases del Proyecto](docs/fases.md):** Mapa de ruta de desarrollo de las 6 fases funcionales del prototipo y porcentaje de avance.
+*   **[Caso de Uso Principal](docs/caso_de_uso_principal.md):** Especificación técnica detallada del flujo de admisión en sala de espera y transmisión de videoconferencia en tiempo real con sus respectivos diagramas generales.
+*   **[Guion de Exposición de Caso de Uso](docs/guion_caso_uso.md):** Guion expositivo estructurado para 3 personas para la presentación oral del caso de uso principal.
+*   **[Presentación del Caso de Uso (Marp)](docs/presentacion_caso_uso.md):** Estructura y diapositivas de la presentación en formato Markdown/Marp.
+*   **[Presentación del Caso de Uso (PowerPoint)](docs/presentacion_caso_uso_final.pptx):** Diapositivas físicas en formato PPTX con **imágenes de los diagramas UML insertadas** (Use Case, Secuencia, Actividades y Regla de Oro) y diseño a doble columna.
 
 ---
 

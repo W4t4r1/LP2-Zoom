@@ -1207,8 +1207,18 @@ public class RoomFrame extends JFrame implements ClienteConexion.MensajeListener
 
                 } catch (Exception e) {
                     System.err.println("[-] Error al subir archivo: " + e.getMessage());
+                    String msg = e.getMessage();
+                    String userMsg = "Error al subir archivo: " + msg;
+                    if (msg != null && (msg.contains("proveedor de archivos de nube") || msg.toLowerCase().contains("cloud file provider"))) {
+                        userMsg = "El archivo seleccionado está en la nube (OneDrive/Google Drive) pero el proveedor de sincronización no se está ejecutando.\n\n"
+                                + "Para solucionarlo:\n"
+                                + "1. Abre e inicia sesión en OneDrive/Google Drive en tu computadora.\n"
+                                + "2. O haz clic derecho sobre el archivo en el Explorador de archivos de Windows y selecciona 'Mantener siempre en este dispositivo'.\n"
+                                + "3. O copia el archivo a una carpeta local fuera de la nube (por ejemplo, C:\\) e intenta subirlo nuevamente.";
+                    }
+                    final String finalUserMsg = userMsg;
                     SwingUtilities.invokeLater(() -> {
-                        JOptionPane.showMessageDialog(this, "Error al subir archivo: " + e.getMessage(), "Error",
+                        JOptionPane.showMessageDialog(this, finalUserMsg, "Error de archivo en la nube",
                                 JOptionPane.ERROR_MESSAGE);
                     });
                 }
