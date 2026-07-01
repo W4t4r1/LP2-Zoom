@@ -8,7 +8,7 @@ El propósito del proyecto es ejemplificar de forma conceptual y práctica la pr
 
 ## Arquitectura y Regla de Oro
 
-> [!IMPORTANT]
+> [IMPORTANTE]
 > **Esquema Estricto Cliente-Servidor**
 > Los clientes **nunca** realizan conexiones JDBC ni consultas directas a la base de datos de Supabase. 
 > 
@@ -84,6 +84,25 @@ mvn -f Servidor/pom.xml compile exec:java -Dexec.mainClass="network.MainServidor
 Abre terminales independientes por cada usuario y ejecuta:
 ```bash
 mvn -f Cliente/pom.xml compile exec:java -Dexec.mainClass="UI.LoginFrame"
+```
+
+---
+
+### Método 3: Ejecución Sencilla mediante Scripts Portables (`.bat` - Solo Windows)
+Este método automatiza la compilación y ejecución del proyecto sin necesidad de configurar manualmente las variables de entorno ni instalar Maven, utilizando las librerías precargadas en la carpeta `lib/`:
+
+#### 1. Iniciar el Servidor de Sockets
+Abre una terminal CMD, navega al directorio del servidor y ejecuta el script (o simplemente haz doble clic sobre él):
+```cmd
+cd Servidor
+run_servidor_portable.bat
+```
+
+#### 2. Iniciar Clientes
+Abre terminales independientes, navega al directorio del cliente y ejecuta el script (o haz doble clic sobre él):
+```cmd
+cd Cliente
+run_cliente_portable.bat
 ```
 
 ---
